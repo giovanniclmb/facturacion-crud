@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facturación</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f5f6f8; }
+        .card { margin-bottom: 1.5rem; }
+        .tabla-items select { min-width: 14rem; }
+        .tabla-items input[type="number"] { max-width: 7rem; }
+        .numero { text-align: right; white-space: nowrap; }
+        .acciones { white-space: nowrap; }
+    </style>
+</head>
+<body>
+<div class="container py-4">
+
+    <h1 class="h3 mb-4">Facturación de ventas</h1>
+
+    <!-- Mensajes de éxito / error -->
+    <div id="mensaje" class="alert d-none" role="alert"></div>
+
+    <!-- ===================== 1. FILTROS ===================== -->
+    <section class="card">
+        <div class="card-header fw-semibold">Buscar comprobantes</div>
+        <div class="card-body">
+            <form id="form-filtros" class="row g-3 align-items-end">
+                <div class="col-sm-6 col-lg-2">
+                    <label for="filtro-fecha-desde" class="form-label">Fecha desde</label>
+                    <input type="date" id="filtro-fecha-desde" class="form-control">
+                </div>
+                <div class="col-sm-6 col-lg-2">
+                    <label for="filtro-fecha-hasta" class="form-label">Fecha hasta</label>
+                    <input type="date" id="filtro-fecha-hasta" class="form-control">
+                </div>
+                <div class="col-sm-6 col-lg-2">
+                    <label for="filtro-estado" class="form-label">Estado</label>
+                    <select id="filtro-estado" class="form-select">
+                        <option value="">Todos</option>
+                        <option value="PENDIENTE">Pendiente</option>
+                        <option value="EMITIDA">Emitida</option>
+                        <option value="ANULADA">Anulada</option>
+                    </select>
+                </div>
+                <div class="col-sm-6 col-lg-2">
+                    <label for="filtro-monto-minimo" class="form-label">Monto mínimo</label>
+                    <input type="number" id="filtro-monto-minimo" class="form-control" min="0" step="0.01">
+                </div>
+                <div class="col-lg-4 d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary">Buscar</button>
+                    <button type="button" id="btn-limpiar-filtros" class="btn btn-outline-secondary">Limpiar</button>
+                    <button type="button" id="btn-reporte-pdf" class="btn btn-outline-danger">PDF</button>
+                    <button type="button" id="btn-reporte-excel" class="btn btn-outline-success">Excel</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <!-- ===================== 2. ALTA ===================== -->
+    <section class="card">
+        <div class="card-header fw-semibold">Nueva factura</div>
+        <div class="card-body">
+            <form id="form-alta" novalidate>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6 col-lg-3">
+                        <label for="alta-punto-venta" class="form-label">Punto de venta</label>
+                        <select id="alta-punto-venta" class="form-select" required></select>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <label for="alta-cliente" class="form-label">Cliente</label>
+                        <select id="alta-cliente" class="form-select" required></select>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <label for="alta-condicion-iva" class="form-label">Condición de IVA</label>
+                        <select id="alta-condicion-iva" class="form-select" required></select>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <label for="alta-moneda" class="form-label">Moneda</label>
+                        <select id="alta-moneda" class="form-select" required></select>
+                    </div>
+                    <div class="col-md-4 col-lg-3">
+                        <label for="alta-fecha" class="form-label">Fecha de emisión</label>
+                        <input type="date" id="alta-fecha" class="form-control" required>
+                    </div>
+                    <div class="col-md-8 col-lg-9">
+                        <label for="alta-observaciones" class="form-label">Observaciones</label>
+                        <input type="text" id="alta-observaciones" class="form-control" maxlength="255">
+                    </div>
+                </div>
+
+                <!-- Tabla dinámica de ítems -->
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle tabla-items">
+                        <thead class="table-light">
+                        <tr>
+                            <th>Artículo</th>
+                            <th>Cantidad</th>
+                            <th>Bonif. %</th>
+                            <th class="numero">Precio unit.</th>
+                            <th class="numero">Subtotal</th>
+                            <th></th>
+                        </tr>
+                        </thead>
+                        <tbody id="items-tbody"></tbody>
+                        <tfoot>
+                        <tr>
+                            <td colspan="4" class="text-end fw-semibold">Total (estimado)</td>
+                            <td id="items-total" class="numero fw-semibold"></td>
+                            <td></td>
+                        </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <button type="button" id="btn-agregar-item" class="btn btn-outline-primary">+ Agregar ítem</button>
+                    <button type="submit" id="btn-crear" class="btn btn-success">Crear factura</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <!-- ===================== 3. LISTADO ===================== -->
+    <section class="card">
+        <div class="card-header fw-semibold d-flex justify-content-between">
+            <span>Comprobantes registrados</span>
+            <span id="listado-resumen" class="text-muted fw-normal"></span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                <tr>
+                    <th>N°</th>
+                    <th>Fecha</th>
+                    <th>Cliente</th>
+                    <th>Cond. IVA</th>
+                    <th>Punto de venta</th>
+                    <th class="numero">Ítems</th>
+                    <th class="numero">Total</th>
+                    <th>Estado</th>
+                    <th>CAE</th>
+                    <th>Acciones</th>
+                </tr>
+                </thead>
+                <tbody id="facturas-tbody"></tbody>
+            </table>
+        </div>
+    </section>
+
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

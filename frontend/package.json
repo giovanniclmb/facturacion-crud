@@ -1,0 +1,15 @@
+{
+  "name": "facturacion-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "http-server public -p 3000 -c-1",
+    "dev": "concurrently -n tsc,web \"tsc --watch\" \"http-server public -p 3000 -c-1\""
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "http-server": "^14.1.1",
+    "typescript": "^7.0.2"
+  }
+}
