@@ -4,7 +4,7 @@ Sistema de facturación de ventas desarrollado como trabajo integrador de Progra
 Expone una **API REST** con **Spring Boot** para consultar, crear, modificar, anular y eliminar
 facturas, genera **reportes en PDF y Excel**, y se consume desde un **frontend web en TypeScript**.
 
-La integración con **ARCA (ex AFIP)** para obtener el CAE en homologación está en desarrollo.
+La integración con **ARCA (ex AFIP)** para obtener el CAE en homologación está planificada (ver *Próximos pasos*).
 
 ## Stack
 
@@ -148,15 +148,11 @@ facturacion-crud/
         └── services/               cliente HTTP (FacturaService, CatalogoService)
 ```
 
-## Integración con ARCA (en desarrollo)
+## Próximos pasos
 
-Cliente propio de los web services de **homologación** de ARCA:
-
-- **WSAA:** autenticación con certificado (firma CMS con BouncyCastle) y caché del ticket de acceso.
-- **WSFEv1:** `FEDummy`, `FECompUltimoAutorizado` y `FECAESolicitar` para obtener el CAE.
-
-Las credenciales (CUIT, certificado y clave privada) se configuran en `arca-local.properties`,
-que está excluido del repositorio.
+- Autorización de comprobantes en **ARCA (ex AFIP)**, entorno de homologación: autenticación
+  con certificado (WSAA) y solicitud de CAE (WSFEv1). Las facturas autorizadas pasarán de
+  `PENDIENTE` a `EMITIDA` con su CAE.
 
 ## Autor
 
