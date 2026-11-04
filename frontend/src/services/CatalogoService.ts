@@ -1,5 +1,5 @@
-import { ArticuloOpcionDTO, OpcionDTO } from '../models/factura.dto.js';
-import { API_URL, pedir } from './http.js';
+import { ArticuloOpcionDTO, ClienteExplorerDTO, ListaPrecioArticuloExplorerDTO, OpcionDTO, PaginaDTO } from '../models/factura.dto.js';
+import { API_URL, construirQueryString, pedir } from './http.js';
 
 /** Datos de referencia para cargar los <select> del formulario de alta. */
 export class CatalogoService {
@@ -24,5 +24,13 @@ export class CatalogoService {
 
     obtenerArticulos(): Promise<ArticuloOpcionDTO[]> {
         return pedir<ArticuloOpcionDTO[]>(`${this.baseUrl}/articulos`);
+    }
+
+    buscarClientes(busqueda = '', pagina = 0): Promise<PaginaDTO<ClienteExplorerDTO>> {
+        return pedir(`${this.baseUrl}/clientes/explorer${construirQueryString({busqueda, pagina, tamanio: 10})}`);
+    }
+
+    buscarListasPrecioArticulos(busqueda = '', pagina = 0): Promise<PaginaDTO<ListaPrecioArticuloExplorerDTO>> {
+        return pedir(`${this.baseUrl}/listas-precio-articulos/explorer${construirQueryString({busqueda, pagina, tamanio: 10})}`);
     }
 }

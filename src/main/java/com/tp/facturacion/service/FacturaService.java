@@ -14,6 +14,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tp.facturacion.dto.FacturaDetalleRequestDto;
+import com.tp.facturacion.dto.FacturaFiltroDto;
+import com.tp.facturacion.dto.PaginaDto;
+import com.tp.facturacion.dto.PaginacionDto;
 import com.tp.facturacion.dto.FacturaReporteDto;
 import com.tp.facturacion.dto.FacturaRequestDto;
 import com.tp.facturacion.exception.RecursoNoEncontradoException;
@@ -47,7 +50,7 @@ public class FacturaService {
     private static final String SELECT_REPORTE =
         "SELECT new " + FacturaReporteDto.class.getName() + "(" +
         "    f.id, f.numero, f.fechaEmision, COALESCE(c.denominacion, 'Consumidor Final'), " +
-        "    ci.denominacion, pv.descripcion, f.importeTotal, COUNT(d), f.estado, f.cae" +
+        "    ci.denominacion, pv.descripcion, f.importeTotal, COUNT(d), f.estado, f.cae, f.numeroFiscal, f.puntoVentaFiscal, f.tipoComprobanteFiscal, f.caeFechaVencimiento, pv.numero" +
         ") " +
         "FROM FacturaVenta f " +
         "LEFT JOIN f.cliente c " +
@@ -57,11 +60,12 @@ public class FacturaService {
 
     private static final String GROUP_BY_REPORTE =
         "GROUP BY f.id, f.numero, f.fechaEmision, c.denominacion, ci.denominacion, " +
-        "pv.descripcion, f.importeTotal, f.estado, f.cae ";
+        "pv.descripcion, f.importeTotal, f.estado, f.cae, f.numeroFiscal, f.puntoVentaFiscal, f.tipoComprobanteFiscal, f.caeFechaVencimiento, pv.numero ";
 
     @PersistenceContext
     private EntityManager em;
 
+    private final com.tp.facturacion.arca.autorizacion.ArcaReporteEnriquecedor arcaReportes;
     private final FacturaVentaRepository facturaVentaRepository;
     private final PuntoVentaRepository puntoVentaRepository;
     private final ClienteRepository clienteRepository;
@@ -69,6 +73,7 @@ public class FacturaService {
     private final TipoMonedaRepository tipoMonedaRepository;
     private final ListaPrecioArticuloRepository listaPrecioArticuloRepository;
     private final UsuarioRepository usuarioRepository;
+    private final com.tp.facturacion.arca.autorizacion.IntentoArcaRepository intentosArca;
 
     @Value("${facturacion.usuario-sistema-id}")
     private Long usuarioSistemaId;
@@ -79,7 +84,10 @@ public class FacturaService {
                           CondicionIvaRepository condicionIvaRepository,
                           TipoMonedaRepository tipoMonedaRepository,
                           ListaPrecioArticuloRepository listaPrecioArticuloRepository,
-                          UsuarioRepository usuarioRepository) {
+                          UsuarioRepository usuarioRepository,
+                          com.tp.facturacion.arca.autorizacion.IntentoArcaRepository intentosArca,
+                          com.tp.facturacion.arca.autorizacion.ArcaReporteEnriquecedor arcaReportes) {
+        this.arcaReportes=arcaReportes;
         this.facturaVentaRepository = facturaVentaRepository;
         this.puntoVentaRepository = puntoVentaRepository;
         this.clienteRepository = clienteRepository;
@@ -87,43 +95,81 @@ public class FacturaService {
         this.tipoMonedaRepository = tipoMonedaRepository;
         this.listaPrecioArticuloRepository = listaPrecioArticuloRepository;
         this.usuarioRepository = usuarioRepository;
+        this.intentosArca = intentosArca;
     }
 
     // ======================= LECTURA =======================
 
     @Transactional(readOnly = true)
-    public List<FacturaReporteDto> buscarFacturasFiltradas(Date fechaDesde, Date fechaHasta,
-                                                           String estado, Double montoMinimo) {
+    public List<FacturaReporteDto> buscarFacturasFiltradas(FacturaFiltroDto filtro) {
+        FiltroConsulta consulta = construirFiltro(filtro);
+        return arcaReportes.completar(consultaReporte(consulta).getResultList());
+    }
 
-        StringBuilder jpql = new StringBuilder(SELECT_REPORTE).append("WHERE 1=1 ");
+    @Transactional(readOnly = true)
+    public PaginaDto<FacturaReporteDto> buscarFacturasPaginadas(FacturaFiltroDto filtro,
+                                                               PaginacionDto paginacion) {
+        FiltroConsulta consulta = construirFiltro(filtro);
+        TypedQuery<Long> cuenta = em.createQuery(
+                "SELECT COUNT(f.id) FROM FacturaVenta f LEFT JOIN f.cliente c "
+                + "JOIN f.condicionIva ci JOIN f.puntoVenta pv " + consulta.where(), Long.class);
+        consulta.parametros().forEach(cuenta::setParameter);
+        long total = cuenta.getSingleResult();
+        long offset = (long) paginacion.getPagina() * paginacion.getTamanio();
+        List<FacturaReporteDto> contenido = offset >= total ? List.of() : consultaReporte(consulta)
+                .setFirstResult((int) offset).setMaxResults(paginacion.getTamanio()).getResultList();
+        return new PaginaDto<>(arcaReportes.completar(contenido), paginacion.getPagina(), paginacion.getTamanio(), total,
+                (total + paginacion.getTamanio() - 1) / paginacion.getTamanio());
+    }
+
+    private TypedQuery<FacturaReporteDto> consultaReporte(FiltroConsulta consulta) {
+        TypedQuery<FacturaReporteDto> query = em.createQuery(
+                SELECT_REPORTE + consulta.where() + GROUP_BY_REPORTE
+                        + "ORDER BY f.fechaEmision, f.numero, f.id", FacturaReporteDto.class);
+        consulta.parametros().forEach(query::setParameter);
+        return query;
+    }
+
+    private FiltroConsulta construirFiltro(FacturaFiltroDto filtro) {
+        if (filtro.getFechaDesde() != null && filtro.getFechaHasta() != null
+                && filtro.getFechaDesde().after(filtro.getFechaHasta())) {
+            throw new IllegalArgumentException("La fecha desde no puede ser posterior a la fecha hasta");
+        }
+        StringBuilder jpql = new StringBuilder("WHERE 1=1 ");
         Map<String, Object> params = new HashMap<>();
-
-        if (fechaDesde != null) {
+        if (filtro.getFechaDesde() != null) {
             jpql.append("AND f.fechaEmision >= :fechaDesde ");
-            params.put("fechaDesde", fechaDesde);
+            params.put("fechaDesde", filtro.getFechaDesde());
         }
-        if (fechaHasta != null) {
-            // fechaEmision guarda fecha Y hora: para incluir todo el día "hasta",
-            // comparamos con "menor que el día siguiente a las 00:00".
+        if (filtro.getFechaHasta() != null) {
             jpql.append("AND f.fechaEmision < :fechaHastaExclusiva ");
-            params.put("fechaHastaExclusiva", diaSiguiente(fechaHasta));
+            params.put("fechaHastaExclusiva", diaSiguiente(filtro.getFechaHasta()));
         }
-        if (estado != null && !estado.trim().isEmpty()) {
+        if (filtro.getEstado() != null && !filtro.getEstado().trim().isEmpty()) {
             jpql.append("AND f.estado = :estado ");
-            params.put("estado", estado.trim());
+            params.put("estado", filtro.getEstado().trim());
         }
-        if (montoMinimo != null) {
+        if (filtro.getMontoMinimo() != null) {
             jpql.append("AND f.importeTotal >= :montoMinimo ");
-            params.put("montoMinimo", montoMinimo);
+            params.put("montoMinimo", filtro.getMontoMinimo());
         }
+        if (filtro.getNumeroFactura() != null) {
+            jpql.append("AND f.numero = :numeroFactura ");
+            params.put("numeroFactura", filtro.getNumeroFactura());
+        }
+        if (filtro.getClienteId() != null) {
+            jpql.append("AND c.id = :clienteId ");
+            params.put("clienteId", filtro.getClienteId());
+        }
+        if (filtro.getSinInformarArca() != null) {
+            jpql.append(filtro.getSinInformarArca()
+                    ? "AND (f.cae IS NULL OR TRIM(f.cae) = '') "
+                    : "AND f.cae IS NOT NULL AND TRIM(f.cae) <> '' ");
+        }
+        return new FiltroConsulta(jpql.toString(), params);
+    }
 
-        jpql.append(GROUP_BY_REPORTE).append("ORDER BY f.fechaEmision, f.numero");
-
-        TypedQuery<FacturaReporteDto> query =
-                em.createQuery(jpql.toString(), FacturaReporteDto.class);
-        params.forEach(query::setParameter);
-
-        return query.getResultList();
+    private record FiltroConsulta(String where, Map<String, Object> parametros) {
     }
 
     @Transactional(readOnly = true)
@@ -136,7 +182,7 @@ public class FacturaService {
         if (resultado.isEmpty()) {
             throw new RecursoNoEncontradoException("No existe la factura con id " + id);
         }
-        return resultado.get(0);
+        return arcaReportes.completar(resultado).get(0);
     }
 
     // ======================= ALTA =======================
@@ -190,24 +236,19 @@ public class FacturaService {
      */
     @Transactional
     public FacturaReporteDto actualizar(Long id, FacturaRequestDto request) {
-        FacturaVenta factura = buscarPorId(facturaVentaRepository, id, "la factura");
+        FacturaVenta factura = facturaVentaRepository.buscarBloqueada(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("No existe la factura con id " + id));
+        if (intentosArca.existsByFacturaIdAndEstadoIn(id, com.tp.facturacion.arca.autorizacion.IntentoArca.ESTADOS_ACTIVOS)) {
+            throw new ReglaNegocioException("La factura tiene una autorización fiscal activa");
+        }
+        if (tieneCae(factura)) {
+            throw new ReglaNegocioException("La factura " + id + " tiene CAE y no puede modificarse ni anularse");
+        }
         Usuario usuario = usuarioSistema();
         Date ahora = new Date();
 
         if (ESTADO_ANULADA.equals(factura.getEstado())) {
             throw new ReglaNegocioException("La factura " + id + " está anulada y no puede modificarse");
-        }
-
-        boolean cambiaContenido = request.getPuntoVentaId() != null
-                || request.getClienteId() != null
-                || request.getCondicionIvaId() != null
-                || request.getTipoMonedaId() != null
-                || request.getFechaEmision() != null
-                || request.getDetalles() != null;
-
-        if (cambiaContenido && tieneCae(factura)) {
-            throw new ReglaNegocioException("La factura " + id + " ya fue autorizada por ARCA (CAE "
-                    + factura.getCae() + "): no puede modificarse, solo anularse");
         }
 
         // Cabecera
@@ -259,23 +300,43 @@ public class FacturaService {
 
     @Transactional
     public void eliminar(Long id) {
-        FacturaVenta factura = buscarPorId(facturaVentaRepository, id, "la factura");
-
-        if (tieneCae(factura)) {
-            throw new ReglaNegocioException("La factura " + id + " tiene CAE y no puede eliminarse: "
-                    + "debe anularse (PUT con \"estado\": \"ANULADA\")");
+        FacturaVenta factura = facturaVentaRepository.buscarBloqueada(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("No existe la factura con id " + id));
+        if (intentosArca.existsByFacturaIdAndEstadoIn(id, com.tp.facturacion.arca.autorizacion.IntentoArca.ESTADOS_ACTIVOS)) {
+            throw new ReglaNegocioException("La factura tiene una autorización fiscal activa");
         }
 
+        if (tieneCae(factura)) {
+            throw new ReglaNegocioException("La factura " + id + " tiene CAE y no puede eliminarse");
+        }
+
+        if (intentosArca.existsByFacturaId(id)) {
+            throw new ReglaNegocioException("La factura conserva historial fiscal y no puede eliminarse");
+        }
         facturaVentaRepository.delete(factura); // la cascada borra también los detalles
     }
 
     // ======================= AUXILIARES =======================
 
     private FacturaVentaDetalle crearDetalle(FacturaDetalleRequestDto request) {
-        ListaPrecioArticulo precio = listaPrecioArticuloRepository
-                .findFirstByArticuloIdAndFechaBajaIsNullOrderByIdDesc(request.getArticuloId())
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe un precio vigente para el artículo con id " + request.getArticuloId()));
+        ListaPrecioArticulo precio;
+        if (request.getListaPrecioArticuloId() != null) {
+            precio = listaPrecioArticuloRepository.findById(request.getListaPrecioArticuloId())
+                    .orElseThrow(() -> new RecursoNoEncontradoException(
+                            "No existe la lista de precio del artículo con id " + request.getListaPrecioArticuloId()));
+            if (!precio.getArticulo().getId().equals(request.getArticuloId())) {
+                throw new IllegalArgumentException("La lista de precio seleccionada no pertenece al artículo indicado");
+            }
+            if (precio.getFechaBaja() != null || precio.getArticulo().getFechaBaja() != null
+                    || precio.getListaPrecio().getFechaBaja() != null) {
+                throw new IllegalArgumentException("La lista de precio seleccionada, el artículo y la lista deben estar activos");
+            }
+        } else {
+            precio = listaPrecioArticuloRepository
+                    .findFirstByArticuloIdAndFechaBajaIsNullAndArticuloFechaBajaIsNullAndListaPrecioFechaBajaIsNullOrderByIdDesc(request.getArticuloId())
+                    .orElseThrow(() -> new RecursoNoEncontradoException(
+                            "No existe un precio vigente para el artículo con id " + request.getArticuloId()));
+        }
 
         FacturaVentaDetalle detalle = new FacturaVentaDetalle();
         detalle.setListaPrecioArticulo(precio);

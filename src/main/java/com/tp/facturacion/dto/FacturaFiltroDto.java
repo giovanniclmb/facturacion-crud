@@ -4,6 +4,8 @@ import java.util.Date;
 
 import org.springframework.format.annotation.DateTimeFormat;
 
+import jakarta.validation.constraints.Positive;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -19,4 +21,12 @@ public class FacturaFiltroDto {
 
     private String estado;
     private Double montoMinimo;
+
+    @Positive
+    private Long numeroFactura;
+
+    @Positive
+    private Long clienteId;
+
+    private Boolean sinInformarArca;
 }

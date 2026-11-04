@@ -1,15 +1,20 @@
 import {
-    ArticuloOpcionDTO,
+    ClienteExplorerDTO,
+    ListaPrecioArticuloExplorerDTO,
     EstadoFactura,
     FacturaDetalleRequestDTO,
     FacturaFiltrosDTO,
     FacturaReporteDTO,
     FacturaRequestDTO,
-    OpcionDTO
+    OpcionDTO,
+    PaginaDTO
 } from './models/factura.dto.js';
 import { FacturaService } from './services/FacturaService.js';
 import { CatalogoService } from './services/CatalogoService.js';
 import { ApiError } from './services/http.js';
+import { Explorer } from './components/Explorer.js';
+import { AutorizacionArca } from './components/AutorizacionArca.js';
+import { permisosFactura } from './models/permisosFactura.js';
 
 // ============================================================
 // Servicios y estado en memoria
@@ -20,13 +25,30 @@ const catalogoService = new CatalogoService();
 
 /** Un renglón del formulario de alta (lo que el usuario está cargando). */
 interface ItemFormulario {
-    articuloId: number | null;
+    precio: ListaPrecioArticuloExplorerDTO | null;
     cantidad: number;
     porcentajeBonificacion: number;
 }
 
 let items: ItemFormulario[] = [];
-let articulos: ArticuloOpcionDTO[] = [];
+let clienteAlta: ClienteExplorerDTO | null = null;
+let clienteFiltro: ClienteExplorerDTO | null = null;
+let filtrosAplicados: FacturaFiltrosDTO = {};
+let paginaActual = 0;
+let totalPaginas = 0;
+let listadoCargando = false;
+let ultimaConsulta = 0;
+let catalogosCargados = false;
+let catalogosCargando = false;
+let creandoFactura = false;
+const operacionesEnCurso = new Set<number>();
+const recuperacionesArcaPendientes = new Set<number>();
+const accionesVisibles = new Map<number, {
+    factura: FacturaReporteDTO;
+    anular: HTMLButtonElement;
+    eliminar: HTMLButtonElement;
+    arca: AutorizacionArca;
+}>();
 
 // ============================================================
 // Referencias al DOM
@@ -45,6 +67,11 @@ const mensaje = elemento<HTMLDivElement>('mensaje');
 
 // Filtros
 const formFiltros = elemento<HTMLFormElement>('form-filtros');
+const filtroNumero = elemento<HTMLInputElement>('filtro-numero');
+const filtroCliente = elemento<HTMLInputElement>('filtro-cliente');
+const btnFiltroCliente = elemento<HTMLButtonElement>('btn-filtro-cliente');
+const btnLimpiarCliente = elemento<HTMLButtonElement>('btn-limpiar-cliente');
+const filtroArca = elemento<HTMLSelectElement>('filtro-arca');
 const filtroFechaDesde = elemento<HTMLInputElement>('filtro-fecha-desde');
 const filtroFechaHasta = elemento<HTMLInputElement>('filtro-fecha-hasta');
 const filtroEstado = elemento<HTMLSelectElement>('filtro-estado');
@@ -55,8 +82,12 @@ const btnReporteExcel = elemento<HTMLButtonElement>('btn-reporte-excel');
 
 // Alta
 const formAlta = elemento<HTMLFormElement>('form-alta');
+const altaCampos = elemento<HTMLFieldSetElement>('alta-campos');
+const catalogosEstado = elemento<HTMLParagraphElement>('catalogos-estado');
+const btnReintentarCatalogos = elemento<HTMLButtonElement>('btn-reintentar-catalogos');
 const altaPuntoVenta = elemento<HTMLSelectElement>('alta-punto-venta');
-const altaCliente = elemento<HTMLSelectElement>('alta-cliente');
+const altaCliente = elemento<HTMLInputElement>('alta-cliente');
+const btnAltaCliente = elemento<HTMLButtonElement>('btn-alta-cliente');
 const altaCondicionIva = elemento<HTMLSelectElement>('alta-condicion-iva');
 const altaMoneda = elemento<HTMLSelectElement>('alta-moneda');
 const altaFecha = elemento<HTMLInputElement>('alta-fecha');
@@ -69,12 +100,42 @@ const btnCrear = elemento<HTMLButtonElement>('btn-crear');
 // Listado
 const facturasTbody = elemento<HTMLTableSectionElement>('facturas-tbody');
 const listadoResumen = elemento<HTMLSpanElement>('listado-resumen');
+const paginaResumen = elemento<HTMLSpanElement>('pagina-resumen');
+const tamanioPagina = elemento<HTMLSelectElement>('tamanio-pagina');
+const btnPaginaAnterior = elemento<HTMLButtonElement>('btn-pagina-anterior');
+const btnPaginaSiguiente = elemento<HTMLButtonElement>('btn-pagina-siguiente');
 
 // ============================================================
 // Utilidades
 // ============================================================
 
 const formatoMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
+
+const explorerClientes = new Explorer<ClienteExplorerDTO>({
+    id: 'explorer-clientes',
+    titulo: 'Buscar cliente',
+    ayuda: 'Busque por denominación o CUIT/CUIL y seleccione un cliente activo.',
+    columnas: [
+        { titulo: 'Cliente', valor: c => c.denominacion },
+        { titulo: 'CUIT/CUIL', valor: c => c.cuitCuil }
+    ],
+    describir: c => `${c.denominacion}, CUIT/CUIL ${c.cuitCuil}`,
+    buscar: (texto, pagina) => catalogoService.buscarClientes(texto, pagina)
+});
+
+const explorerPrecios = new Explorer<ListaPrecioArticuloExplorerDTO>({
+    id: 'explorer-precios',
+    titulo: 'Buscar artículo y precio',
+    ayuda: 'Busque por código, artículo o lista de precios. Elija el precio que usará este ítem.',
+    columnas: [
+        { titulo: 'Código', valor: p => p.articuloCodigo },
+        { titulo: 'Artículo', valor: p => p.articuloDenominacion },
+        { titulo: 'Lista de precios', valor: p => `${p.listaPrecioCodigo} · ${p.listaPrecioDenominacion}` },
+        { titulo: 'Precio unitario', valor: p => formatearMoneda(p.precioVenta), numero: true }
+    ],
+    describir: p => `${p.articuloDenominacion}, lista ${p.listaPrecioCodigo}, ${formatearMoneda(p.precioVenta)}`,
+    buscar: (texto, pagina) => catalogoService.buscarListasPrecioArticulos(texto, pagina)
+});
 
 function formatearMoneda(valor: number): string {
     return formatoMoneda.format(valor);
@@ -120,7 +181,10 @@ function mostrarMensaje(tipo: 'success' | 'danger' | 'warning', texto: string, d
         detalles.forEach(d => lista.appendChild(crearElemento('li', '', d)));
         mensaje.appendChild(lista);
     }
-    mensaje.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    mensaje.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+        block: 'nearest'
+    });
 }
 
 function ocultarMensaje(): void {
@@ -147,24 +211,40 @@ function llenarSelect(select: HTMLSelectElement, opciones: OpcionDTO[], textoVac
 }
 
 async function cargarCatalogos(): Promise<void> {
-    // Las cinco peticiones salen a la vez y esperamos a que terminen todas
-    const [puntosVenta, clientes, condicionesIva, monedas, listaArticulos] = await Promise.all([
-        catalogoService.obtenerPuntosVenta(),
-        catalogoService.obtenerClientes(),
-        catalogoService.obtenerCondicionesIva(),
-        catalogoService.obtenerMonedas(),
-        catalogoService.obtenerArticulos()
-    ]);
-
-    llenarSelect(altaPuntoVenta, puntosVenta, 'Seleccione…');
-    llenarSelect(altaCliente, clientes, 'Seleccione…');
-    llenarSelect(altaCondicionIva, condicionesIva, 'Seleccione…');
-    llenarSelect(altaMoneda, monedas, 'Seleccione…');
-    articulos = listaArticulos;
-}
-
-function precioDe(articuloId: number | null): number {
-    return articulos.find(a => a.id === articuloId)?.precio ?? 0;
+    if (catalogosCargando) return;
+    catalogosCargando = true;
+    catalogosCargados = false;
+    altaCampos.disabled = true;
+    btnCrear.disabled = true;
+    btnReintentarCatalogos.hidden = true;
+    btnReintentarCatalogos.disabled = true;
+    catalogosEstado.classList.remove('text-danger');
+    catalogosEstado.classList.add('text-muted');
+    catalogosEstado.textContent = 'Cargando opciones para crear la factura…';
+    try {
+        // Solo los catálogos pequeños; clientes y precios se consultan en sus explorers.
+        const [puntosVenta, condicionesIva, monedas] = await Promise.all([
+            catalogoService.obtenerPuntosVenta(),
+            catalogoService.obtenerCondicionesIva(),
+            catalogoService.obtenerMonedas()
+        ]);
+        llenarSelect(altaPuntoVenta, puntosVenta, 'Seleccione…');
+        llenarSelect(altaCondicionIva, condicionesIva, 'Seleccione…');
+        llenarSelect(altaMoneda, monedas, 'Seleccione…');
+        catalogosCargados = true;
+        catalogosEstado.textContent = 'Opciones listas. Puede completar la factura.';
+    } catch (error) {
+        const detalle = error instanceof Error ? error.message : 'Vuelva a intentarlo.';
+        catalogosEstado.textContent = `No se pudieron cargar las opciones para crear facturas. ${detalle}`;
+        catalogosEstado.classList.remove('text-muted');
+        catalogosEstado.classList.add('text-danger');
+        btnReintentarCatalogos.hidden = false;
+    } finally {
+        catalogosCargando = false;
+        altaCampos.disabled = !catalogosCargados;
+        btnCrear.disabled = !catalogosCargados || creandoFactura;
+        btnReintentarCatalogos.disabled = false;
+    }
 }
 
 // ============================================================
@@ -172,7 +252,7 @@ function precioDe(articuloId: number | null): number {
 // ============================================================
 
 function subtotalDe(item: ItemFormulario): number {
-    const bruto = item.cantidad * precioDe(item.articuloId);
+    const bruto = item.cantidad * (item.precio?.precioVenta ?? 0);
     return redondear(bruto - bruto * item.porcentajeBonificacion / 100);
 }
 
@@ -183,7 +263,7 @@ function actualizarTotal(): void {
 
 function crearInputNumero(valor: number, min: string, max: string | null, step: string,
                           alCambiar: (valor: number) => void): HTMLInputElement {
-    const input = crearElemento('input', 'form-control form-control-sm');
+    const input = crearElemento('input', 'form-control');
     input.type = 'number';
     input.min = min;
     if (max !== null) input.max = max;
@@ -202,38 +282,65 @@ function crearFilaItem(item: ItemFormulario, indice: number): HTMLTableRowElemen
 
     // Recalcula solo esta fila y el total (sin redibujar la tabla, para no perder el foco)
     const refrescarFila = (): void => {
-        celdaPrecio.textContent = formatearMoneda(precioDe(item.articuloId));
+        celdaPrecio.textContent = formatearMoneda(item.precio?.precioVenta ?? 0);
         celdaSubtotal.textContent = formatearMoneda(subtotalDe(item));
-        actualizarTotal();
     };
 
-    // Artículo
-    const selectArticulo = crearElemento('select', 'form-select form-select-sm');
-    selectArticulo.appendChild(new Option('Seleccione…', ''));
-    articulos.forEach(a => selectArticulo.appendChild(new Option(a.descripcion, String(a.id))));
-    selectArticulo.value = item.articuloId !== null ? String(item.articuloId) : '';
-    selectArticulo.addEventListener('change', () => {
-        item.articuloId = selectArticulo.value ? Number(selectArticulo.value) : null;
-        refrescarFila();
+    const seleccionArticulo = crearElemento('div', 'articulo-seleccion');
+    const descripcionArticulo = crearElemento('div');
+    const listaPrecio = crearElemento('div', 'small text-muted');
+    const btnBuscarArticulo = crearElemento('button', 'btn btn-outline-primary mt-2 btn-buscar-articulo', 'Buscar artículo');
+    btnBuscarArticulo.type = 'button';
+    btnBuscarArticulo.setAttribute('aria-label', `Buscar artículo para ítem ${indice + 1}`);
+    const mostrarArticulo = (): void => {
+        descripcionArticulo.textContent = item.precio
+            ? `${item.precio.articuloCodigo} · ${item.precio.articuloDenominacion}` : 'Sin artículo seleccionado';
+        listaPrecio.textContent = item.precio
+            ? `Lista ${item.precio.listaPrecioCodigo} · ${item.precio.listaPrecioDenominacion}` : '';
+    };
+    btnBuscarArticulo.addEventListener('click', async () => {
+        const precio = await explorerPrecios.abrir();
+        if (precio) {
+            item.precio = precio;
+            mostrarArticulo();
+            refrescarFila();
+            actualizarTotal();
+        }
     });
+    mostrarArticulo();
+    seleccionArticulo.append(descripcionArticulo, listaPrecio, btnBuscarArticulo);
 
     // Cantidad y bonificación
-    const inputCantidad = crearInputNumero(item.cantidad, '0.01', null, '1', v => {
+    const inputCantidad = crearInputNumero(item.cantidad, '0.01', null, '0.01', v => {
         item.cantidad = v;
         refrescarFila();
+        actualizarTotal();
     });
     const inputBonificacion = crearInputNumero(item.porcentajeBonificacion, '0', '100', '0.5', v => {
         item.porcentajeBonificacion = v;
         refrescarFila();
+        actualizarTotal();
     });
+    inputCantidad.setAttribute('aria-label', `Cantidad del ítem ${indice + 1}`);
+    inputBonificacion.setAttribute('aria-label', `Bonificación del ítem ${indice + 1}`);
 
     // Quitar
-    const btnQuitar = crearElemento('button', 'btn btn-sm btn-outline-danger', 'Quitar');
+    const btnQuitar = crearElemento('button', 'btn btn-outline-danger btn-quitar-item', 'Quitar');
     btnQuitar.type = 'button';
+    btnQuitar.setAttribute('aria-label', `Quitar ítem ${indice + 1}`);
     btnQuitar.disabled = items.length === 1; // siempre queda al menos un ítem
     btnQuitar.addEventListener('click', () => {
-        items.splice(indice, 1);
-        renderizarItems();
+        const posicion = items.indexOf(item);
+        if (items.length === 1 || posicion < 0) return;
+        const focoEnFila = fila.contains(document.activeElement);
+        const vecina = fila.nextElementSibling ?? fila.previousElementSibling;
+        items.splice(posicion, 1);
+        fila.remove();
+        actualizarControlesItems();
+        actualizarTotal();
+        if (focoEnFila) {
+            (vecina?.querySelector<HTMLInputElement>('input') ?? btnAgregarItem).focus();
+        }
     });
 
     const celda = (contenido: HTMLElement): HTMLTableCellElement => {
@@ -242,7 +349,7 @@ function crearFilaItem(item: ItemFormulario, indice: number): HTMLTableRowElemen
         return td;
     };
 
-    fila.append(celda(selectArticulo), celda(inputCantidad), celda(inputBonificacion),
+    fila.append(celda(seleccionArticulo), celda(inputCantidad), celda(inputBonificacion),
                 celdaPrecio, celdaSubtotal, celda(btnQuitar));
     refrescarFila();
     return fila;
@@ -253,15 +360,32 @@ function renderizarItems(): void {
     actualizarTotal();
 }
 
+function actualizarControlesItems(): void {
+    Array.from(itemsTbody.rows).forEach((fila, indice) => {
+        const inputs = fila.querySelectorAll('input');
+        inputs[0].setAttribute('aria-label', `Cantidad del ítem ${indice + 1}`);
+        inputs[1].setAttribute('aria-label', `Bonificación del ítem ${indice + 1}`);
+        fila.querySelector('.btn-buscar-articulo')?.setAttribute('aria-label', `Buscar artículo para ítem ${indice + 1}`);
+        const quitar = fila.querySelector<HTMLButtonElement>('.btn-quitar-item')!;
+        quitar.setAttribute('aria-label', `Quitar ítem ${indice + 1}`);
+        quitar.disabled = items.length === 1;
+    });
+}
+
 function agregarItem(): void {
-    items.push({ articuloId: null, cantidad: 1, porcentajeBonificacion: 0 });
-    renderizarItems();
+    const item: ItemFormulario = { precio: null, cantidad: 1, porcentajeBonificacion: 0 };
+    items.push(item);
+    itemsTbody.append(crearFilaItem(item, items.length - 1));
+    actualizarControlesItems();
+    actualizarTotal();
 }
 
 function reiniciarFormularioAlta(): void {
     formAlta.reset();
+    clienteAlta = null;
     altaFecha.value = hoyISO();
     items = [];
+    itemsTbody.replaceChildren();
     agregarItem();
 }
 
@@ -277,11 +401,11 @@ function idSeleccionado(select: HTMLSelectElement): number | undefined {
 function validarAlta(): string[] {
     const errores: string[] = [];
     if (!altaPuntoVenta.value) errores.push('Seleccione el punto de venta');
-    if (!altaCliente.value) errores.push('Seleccione el cliente');
+    if (!clienteAlta) errores.push('Seleccione el cliente');
     if (!altaCondicionIva.value) errores.push('Seleccione la condición de IVA');
     if (!altaMoneda.value) errores.push('Seleccione la moneda');
     items.forEach((item, i) => {
-        if (item.articuloId === null) errores.push(`Ítem ${i + 1}: seleccione el artículo`);
+        if (!item.precio) errores.push(`Ítem ${i + 1}: seleccione el artículo y su lista de precios`);
         if (item.cantidad <= 0) errores.push(`Ítem ${i + 1}: la cantidad debe ser mayor que 0`);
         if (item.porcentajeBonificacion < 0 || item.porcentajeBonificacion > 100) {
             errores.push(`Ítem ${i + 1}: la bonificación debe estar entre 0 y 100`);
@@ -292,14 +416,15 @@ function validarAlta(): string[] {
 
 function leerFormularioAlta(): FacturaRequestDTO {
     const detalles: FacturaDetalleRequestDTO[] = items.map(item => ({
-        articuloId: item.articuloId as number,   // validarAlta garantiza que no es null
+        articuloId: item.precio!.articuloId,   // validarAlta garantiza la selección
+        listaPrecioArticuloId: item.precio!.id,
         cantidad: item.cantidad,
         porcentajeBonificacion: item.porcentajeBonificacion
     }));
 
     return {
         puntoVentaId: idSeleccionado(altaPuntoVenta),
-        clienteId: idSeleccionado(altaCliente),
+        clienteId: clienteAlta?.id,
         condicionIvaId: idSeleccionado(altaCondicionIva),
         tipoMonedaId: idSeleccionado(altaMoneda),
         fechaEmision: altaFecha.value || undefined,
@@ -310,6 +435,7 @@ function leerFormularioAlta(): FacturaRequestDTO {
 
 async function crearFactura(evento: SubmitEvent): Promise<void> {
     evento.preventDefault(); // evita que el formulario recargue la página
+    if (!catalogosCargados || creandoFactura) return;
 
     const errores = validarAlta();
     if (errores.length > 0) {
@@ -317,6 +443,7 @@ async function crearFactura(evento: SubmitEvent): Promise<void> {
         return;
     }
 
+    creandoFactura = true;
     btnCrear.disabled = true;
     try {
         const creada = await facturaService.crearFactura(leerFormularioAlta());
@@ -327,7 +454,8 @@ async function crearFactura(evento: SubmitEvent): Promise<void> {
     } catch (error) {
         mostrarError(error);
     } finally {
-        btnCrear.disabled = false;
+        creandoFactura = false;
+        btnCrear.disabled = !catalogosCargados;
     }
 }
 
@@ -337,6 +465,9 @@ async function crearFactura(evento: SubmitEvent): Promise<void> {
 
 function leerFiltros(): FacturaFiltrosDTO {
     return {
+        numeroFactura: filtroNumero.value ? filtroNumero.valueAsNumber : undefined,
+        clienteId: clienteFiltro?.id,
+        sinInformarArca: filtroArca.value === '' ? undefined : filtroArca.value === 'true',
         fechaDesde: filtroFechaDesde.value || undefined,
         fechaHasta: filtroFechaHasta.value || undefined,
         estado: (filtroEstado.value || undefined) as EstadoFactura | undefined,
@@ -352,52 +483,84 @@ const CLASE_ESTADO: Record<EstadoFactura, string> = {
 
 function crearFilaFactura(f: FacturaReporteDTO): HTMLTableRowElement {
     const fila = crearElemento('tr');
+    fila.setAttribute('role', 'row');
     if (f.estado === 'ANULADA') fila.classList.add('text-muted');
+    const celda = (etiqueta: string, clase: string): HTMLTableCellElement => {
+        const td = crearElemento('td', clase);
+        td.dataset.label = etiqueta;
+        td.setAttribute('role', 'cell');
+        return td;
+    };
+    // textContent: los datos de API siempre se presentan como texto.
+    const comprobante = celda('Comprobante', 'comprobante');
+    const numero = crearElemento('div', 'fila-principal');
+    numero.append(crearElemento('strong', '', f.numeroFactura !== null ? `N° local ${f.numeroFactura}` : 'N° local —'));
+    comprobante.append(numero, crearElemento('div', 'fila-secundaria',
+        `${formatearFecha(f.fechaEmision)} · ${f.puntoVentaDescripcion}`));
+    const cliente = celda('Cliente', 'cliente');
+    cliente.append(crearElemento('div', 'fila-principal', f.clienteDenominacion),
+        crearElemento('div', 'fila-secundaria', f.condicionIva));
+    const importe = celda('Importe', 'numero');
+    importe.append(crearElemento('div', 'fila-principal', formatearMoneda(f.importeTotal)),
+        crearElemento('div', 'fila-secundaria', `${f.cantidadItems} ${f.cantidadItems === 1 ? 'ítem' : 'ítems'}`));
+    const estado = celda('Estado y ARCA', 'estado-factura');
+    const estadoPrincipal = crearElemento('div', 'fila-principal');
+    estadoPrincipal.append(crearElemento('span', `badge ${CLASE_ESTADO[f.estado] ?? 'text-bg-light'}`, f.estado));
+    estado.append(estadoPrincipal);
 
-    const columnas: [string, string][] = [
-        [f.numeroFactura !== null ? String(f.numeroFactura) : '—', ''],
-        [formatearFecha(f.fechaEmision), ''],
-        [f.clienteDenominacion, ''],
-        [f.condicionIva, ''],
-        [f.puntoVentaDescripcion, ''],
-        [String(f.cantidadItems), 'numero'],
-        [formatearMoneda(f.importeTotal), 'numero']
-    ];
-    // textContent (no innerHTML): el texto nunca se interpreta como HTML
-    columnas.forEach(([texto, clase]) => fila.appendChild(crearElemento('td', clase, texto)));
-
-    const celdaEstado = crearElemento('td');
-    celdaEstado.appendChild(crearElemento('span', `badge ${CLASE_ESTADO[f.estado] ?? 'text-bg-light'}`, f.estado));
-    fila.appendChild(celdaEstado);
-
-    fila.appendChild(crearElemento('td', 'small', f.cae ?? '—'));
-
-    // Acciones
-    const celdaAcciones = crearElemento('td', 'acciones');
-
-    const btnAnular = crearElemento('button', 'btn btn-sm btn-outline-warning me-1', 'Anular');
+    const celdaAcciones = celda('Acciones', 'acciones');
+    const permisos = permisosFactura(f);
+    const btnAnular = crearElemento('button', 'btn btn-outline-warning btn-anular me-1', 'Anular');
     btnAnular.type = 'button';
-    btnAnular.disabled = f.estado === 'ANULADA';
-    btnAnular.addEventListener('click', () => anularFactura(f));
-
-    const btnEliminar = crearElemento('button', 'btn btn-sm btn-outline-danger', 'Eliminar');
+    btnAnular.setAttribute('aria-label', `Anular factura N° ${f.numeroFactura}, ${f.puntoVentaDescripcion}`);
+    btnAnular.disabled = listadoCargando || operacionesEnCurso.has(f.id) || !permisos.anular;
+    btnAnular.addEventListener('click', () => { void anularFactura(f); });
+    const btnEliminar = crearElemento('button', 'btn btn-outline-danger btn-eliminar', 'Eliminar');
     btnEliminar.type = 'button';
-    if (f.cae) {
-        btnEliminar.disabled = true;
-        btnEliminar.title = 'Tiene CAE: no puede eliminarse, solo anularse';
-    }
-    btnEliminar.addEventListener('click', () => eliminarFactura(f));
-
+    btnEliminar.setAttribute('aria-label', `Eliminar factura N° ${f.numeroFactura}, ${f.puntoVentaDescripcion}`);
+    btnEliminar.disabled = listadoCargando || operacionesEnCurso.has(f.id) || !permisos.eliminar;
+    btnEliminar.addEventListener('click', () => { void eliminarFactura(f); });
     celdaAcciones.append(btnAnular, btnEliminar);
-    fila.appendChild(celdaAcciones);
+    const arca = new AutorizacionArca(f, facturaService, {
+        bloqueada: () => listadoCargando || operacionesEnCurso.has(f.id) || recuperacionesArcaPendientes.has(f.id),
+        recuperacionPendiente: () => recuperacionesArcaPendientes.has(f.id) && !operacionesEnCurso.has(f.id),
+        iniciar: () => { operacionesEnCurso.add(f.id); actualizarAcciones(); },
+        finalizar: () => { operacionesEnCurso.delete(f.id); actualizarAcciones(); },
+        bloquearRecuperacion: bloquear => {
+            if (bloquear) recuperacionesArcaPendientes.add(f.id);
+            else recuperacionesArcaPendientes.delete(f.id);
+            actualizarAcciones();
+        },
+        estadoActualizado: resultado => {
+            // Una recarga puede haber reemplazado la fila mientras el POST estaba pendiente.
+            const visible = accionesVisibles.get(f.id);
+            visible?.arca.actualizarDatos(resultado);
+        }
+    });
+    estado.append(arca.estado);
+    celdaAcciones.append(arca.acciones);
+    accionesVisibles.set(f.id, { factura: f, anular: btnAnular, eliminar: btnEliminar, arca });
+    fila.append(comprobante, cliente, importe, estado, celdaAcciones);
     return fila;
 }
 
-function renderizarFacturas(facturas: FacturaReporteDTO[]): void {
+function actualizarAcciones(): void {
+    for (const [id, controles] of accionesVisibles) {
+        const permisos = permisosFactura(controles.factura);
+        const bloqueada = listadoCargando || operacionesEnCurso.has(id) || recuperacionesArcaPendientes.has(id);
+        controles.anular.disabled = bloqueada || !permisos.anular;
+        controles.eliminar.disabled = bloqueada || !permisos.eliminar;
+        controles.arca.actualizar();
+    }
+}
+
+function renderizarFacturas(pagina: PaginaDTO<FacturaReporteDTO>): void {
+    const facturas = pagina.contenido;
+    accionesVisibles.clear();
     if (facturas.length === 0) {
-        const fila = crearElemento('tr');
+        const fila = crearElemento('tr', 'fila-vacia');
         const celda = crearElemento('td', 'text-center text-muted py-4', 'No hay comprobantes para los filtros seleccionados');
-        celda.colSpan = 10;
+        celda.colSpan = 5;
         fila.appendChild(celda);
         facturasTbody.replaceChildren(fila);
     } else {
@@ -405,41 +568,104 @@ function renderizarFacturas(facturas: FacturaReporteDTO[]): void {
     }
 
     const total = facturas.reduce((suma, f) => suma + f.importeTotal, 0);
-    listadoResumen.textContent = `${facturas.length} comprobante(s) · ${formatearMoneda(total)}`;
+    const desde = facturas.length === 0 ? 0 : pagina.pagina * pagina.tamanio + 1;
+    const hasta = facturas.length === 0 ? 0 : desde + facturas.length - 1;
+    listadoResumen.textContent = `${desde}–${hasta} de ${pagina.totalElementos} ${pagina.totalElementos === 1 ? 'comprobante' : 'comprobantes'} · Total de esta página: ${formatearMoneda(total)}`;
+    paginaResumen.textContent = pagina.totalPaginas === 0
+        ? 'Sin resultados' : `Página ${pagina.pagina + 1} de ${pagina.totalPaginas}`;
 }
 
-async function cargarFacturas(): Promise<void> {
+function actualizarPaginacion(): void {
+    actualizarAcciones();
+    btnPaginaAnterior.disabled = listadoCargando || paginaActual <= 0;
+    btnPaginaSiguiente.disabled = listadoCargando || paginaActual + 1 >= totalPaginas;
+    tamanioPagina.disabled = listadoCargando;
+    btnReportePdf.disabled = listadoCargando;
+    btnReporteExcel.disabled = listadoCargando;
+    facturasTbody.closest('table')?.setAttribute('aria-busy', String(listadoCargando));
+}
+
+async function cargarFacturas(pagina = paginaActual): Promise<void> {
+    const consulta = ++ultimaConsulta;
+    listadoCargando = true;
+    listadoResumen.textContent = 'Cargando comprobantes…';
+    actualizarPaginacion();
     try {
-        renderizarFacturas(await facturaService.obtenerFacturas(leerFiltros()));
+        let resultado = await facturaService.obtenerFacturas(filtrosAplicados, pagina, Number(tamanioPagina.value));
+        if (consulta !== ultimaConsulta) return;
+        // Al eliminar la última fila de la última página, volvemos a una página existente.
+        if (resultado.pagina > 0 && resultado.pagina >= resultado.totalPaginas) {
+            resultado = await facturaService.obtenerFacturas(
+                filtrosAplicados, Math.max(0, resultado.totalPaginas - 1), Number(tamanioPagina.value));
+            if (consulta !== ultimaConsulta) return;
+        }
+        paginaActual = resultado.pagina;
+        totalPaginas = resultado.totalPaginas;
+        renderizarFacturas(resultado);
     } catch (error) {
+        if (consulta !== ultimaConsulta) return;
+        // No dejar datos de una búsqueda anterior bajo los filtros nuevos.
+        facturasTbody.replaceChildren();
+        accionesVisibles.clear();
+        totalPaginas = 0;
+        paginaActual = 0;
+        listadoResumen.textContent = 'No se pudo cargar el listado. Vuelva a buscar para reintentar.';
+        paginaResumen.textContent = 'Listado no disponible';
         mostrarError(error);
+    } finally {
+        if (consulta === ultimaConsulta) {
+            listadoCargando = false;
+            actualizarPaginacion();
+        }
     }
 }
 
 async function anularFactura(f: FacturaReporteDTO): Promise<void> {
+    if (listadoCargando || operacionesEnCurso.has(f.id) || recuperacionesArcaPendientes.has(f.id)) return;
+    const permisos = permisosFactura(f);
+    if (!permisos.anular) {
+        mostrarMensaje('warning', permisos.motivo);
+        return;
+    }
     const motivo = prompt(`Motivo de la anulación de la factura N° ${f.numeroFactura}:`);
     if (motivo === null) return; // canceló
 
+    operacionesEnCurso.add(f.id);
+    actualizarAcciones();
     try {
         await facturaService.actualizarEstado(f.id, 'ANULADA', motivo);
         mostrarMensaje('success', `Factura N° ${f.numeroFactura} anulada.`);
         await cargarFacturas();
     } catch (error) {
         mostrarError(error);
+    } finally {
+        operacionesEnCurso.delete(f.id);
+        actualizarAcciones();
     }
 }
 
 async function eliminarFactura(f: FacturaReporteDTO): Promise<void> {
+    if (listadoCargando || operacionesEnCurso.has(f.id) || recuperacionesArcaPendientes.has(f.id)) return;
+    const permisos = permisosFactura(f);
+    if (!permisos.eliminar) {
+        mostrarMensaje('warning', permisos.motivo);
+        return;
+    }
     if (!confirm(`¿Eliminar definitivamente la factura N° ${f.numeroFactura}? Esta acción no se puede deshacer.`)) {
         return;
     }
 
+    operacionesEnCurso.add(f.id);
+    actualizarAcciones();
     try {
         await facturaService.eliminarFactura(f.id);
         mostrarMensaje('success', `Factura N° ${f.numeroFactura} eliminada.`);
         await cargarFacturas();
     } catch (error) {
         mostrarError(error);
+    } finally {
+        operacionesEnCurso.delete(f.id);
+        actualizarAcciones();
     }
 }
 
@@ -449,35 +675,69 @@ async function eliminarFactura(f: FacturaReporteDTO): Promise<void> {
 
 formFiltros.addEventListener('submit', evento => {
     evento.preventDefault();
+    validarFechasFiltro();
+    if (!formFiltros.reportValidity()) return;
     ocultarMensaje();
-    cargarFacturas();
+    filtrosAplicados = leerFiltros();
+    cargarFacturas(0);
 });
+
+function validarFechasFiltro(): void {
+    filtroFechaHasta.setCustomValidity(
+        filtroFechaDesde.value && filtroFechaHasta.value && filtroFechaDesde.value > filtroFechaHasta.value
+            ? 'La fecha hasta debe ser igual o posterior a la fecha desde.' : '');
+}
+
+filtroFechaDesde.addEventListener('input', validarFechasFiltro);
+filtroFechaHasta.addEventListener('input', validarFechasFiltro);
 
 btnLimpiarFiltros.addEventListener('click', () => {
     formFiltros.reset();
+    clienteFiltro = null;
+    filtroFechaHasta.setCustomValidity('');
+    filtrosAplicados = {};
     ocultarMensaje();
-    cargarFacturas();
+    cargarFacturas(0);
 });
 
 btnReportePdf.addEventListener('click', () => {
-    window.location.href = facturaService.urlReporte('pdf', leerFiltros());
+    window.location.href = facturaService.urlReporte('pdf', filtrosAplicados);
 });
 
 btnReporteExcel.addEventListener('click', () => {
-    window.location.href = facturaService.urlReporte('excel', leerFiltros());
+    window.location.href = facturaService.urlReporte('excel', filtrosAplicados);
 });
 
+btnPaginaAnterior.addEventListener('click', () => cargarFacturas(paginaActual - 1));
+btnPaginaSiguiente.addEventListener('click', () => cargarFacturas(paginaActual + 1));
+tamanioPagina.addEventListener('change', () => cargarFacturas(0));
+
 btnAgregarItem.addEventListener('click', agregarItem);
+btnAltaCliente.addEventListener('click', async () => {
+    const cliente = await explorerClientes.abrir();
+    if (cliente) {
+        clienteAlta = cliente;
+        altaCliente.value = `${cliente.denominacion} (${cliente.cuitCuil})`;
+    }
+});
+btnFiltroCliente.addEventListener('click', async () => {
+    const cliente = await explorerClientes.abrir();
+    if (cliente) {
+        clienteFiltro = cliente;
+        filtroCliente.value = `${cliente.denominacion} (${cliente.cuitCuil})`;
+    }
+});
+btnLimpiarCliente.addEventListener('click', () => {
+    clienteFiltro = null;
+    filtroCliente.value = '';
+});
 formAlta.addEventListener('submit', crearFactura);
 
+btnReintentarCatalogos.addEventListener('click', () => { void cargarCatalogos(); });
+
 async function iniciar(): Promise<void> {
-    try {
-        await cargarCatalogos();
-    } catch (error) {
-        mostrarError(error);
-    }
     reiniciarFormularioAlta();
-    await cargarFacturas();
+    await Promise.all([cargarCatalogos(), cargarFacturas()]);
 }
 
-iniciar();
+void iniciar();

@@ -5,28 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Facturación</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f5f6f8; }
-        .card { margin-bottom: 1.5rem; }
-        .tabla-items select { min-width: 14rem; }
-        .tabla-items input[type="number"] { max-width: 7rem; }
-        .numero { text-align: right; white-space: nowrap; }
-        .acciones { white-space: nowrap; }
-    </style>
+    <link href="css/app.css" rel="stylesheet">
 </head>
 <body>
-<div class="container py-4">
+<a class="saltar-contenido" href="#contenido-principal">Ir al contenido principal</a>
+<main id="contenido-principal" class="container app-main py-4" tabindex="-1">
 
-    <h1 class="h3 mb-4">Facturación de ventas</h1>
+    <header class="app-header">
+        <h1>Facturación de ventas</h1>
+        <p>Busque comprobantes o despliegue Nueva factura para iniciar una venta.</p>
+    </header>
 
     <!-- Mensajes de éxito / error -->
     <div id="mensaje" class="alert d-none" role="alert"></div>
 
     <!-- ===================== 1. FILTROS ===================== -->
-    <section class="card">
-        <div class="card-header fw-semibold">Buscar comprobantes</div>
+    <details id="panel-busqueda" class="card panel-plegable" open>
+        <summary class="card-header fw-semibold"><span class="panel-titulo">Buscar comprobantes</span></summary>
         <div class="card-body">
             <form id="form-filtros" class="row g-3 align-items-end">
+                <div class="col-sm-6 col-lg-2">
+                    <label for="filtro-numero" class="form-label">N° de factura</label>
+                    <input type="number" id="filtro-numero" class="form-control" min="1" step="1">
+                </div>
+                <div class="col-sm-6 col-lg-4">
+                    <label for="filtro-cliente" class="form-label">Cliente</label>
+                    <div class="input-group">
+                        <input id="filtro-cliente" class="form-control" readonly placeholder="Todos">
+                        <button type="button" id="btn-filtro-cliente" class="btn btn-outline-primary" aria-label="Buscar cliente para filtrar facturas">Buscar</button>
+                        <button type="button" id="btn-limpiar-cliente" class="btn btn-outline-secondary" aria-label="Quitar filtro de cliente">Quitar</button>
+                    </div>
+                </div>
                 <div class="col-sm-6 col-lg-2">
                     <label for="filtro-fecha-desde" class="form-label">Fecha desde</label>
                     <input type="date" id="filtro-fecha-desde" class="form-control">
@@ -48,21 +57,36 @@
                     <label for="filtro-monto-minimo" class="form-label">Monto mínimo</label>
                     <input type="number" id="filtro-monto-minimo" class="form-control" min="0" step="0.01">
                 </div>
-                <div class="col-lg-4 d-flex flex-wrap gap-2">
+                <div class="col-sm-6 col-lg-3">
+                    <label for="filtro-arca" class="form-label">Situación ante ARCA</label>
+                    <select id="filtro-arca" class="form-select">
+                        <option value="">Todas</option>
+                        <option value="true">Sin informar (sin CAE)</option>
+                        <option value="false">Informadas (con CAE)</option>
+                    </select>
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-2 filtros-acciones">
                     <button type="submit" class="btn btn-primary">Buscar</button>
                     <button type="button" id="btn-limpiar-filtros" class="btn btn-outline-secondary">Limpiar</button>
                     <button type="button" id="btn-reporte-pdf" class="btn btn-outline-danger">PDF</button>
                     <button type="button" id="btn-reporte-excel" class="btn btn-outline-success">Excel</button>
+                    <span class="reportes-ayuda">PDF y Excel incluyen todos los resultados de la búsqueda aplicada.</span>
                 </div>
             </form>
         </div>
-    </section>
+    </details>
 
     <!-- ===================== 2. ALTA ===================== -->
-    <section class="card">
-        <div class="card-header fw-semibold">Nueva factura</div>
+    <details id="panel-alta" class="card panel-plegable">
+        <summary class="card-header fw-semibold"><span class="panel-titulo">Nueva factura</span></summary>
         <div class="card-body">
+            <div class="catalogos-barra mb-3">
+                <p id="catalogos-estado" class="small text-muted" role="status" aria-live="polite">Cargando opciones para el alta…</p>
+                <button type="button" id="btn-reintentar-catalogos" class="btn btn-outline-primary" hidden>Reintentar carga de opciones</button>
+            </div>
             <form id="form-alta" novalidate>
+                <fieldset id="alta-campos" disabled>
+                <legend class="visually-hidden">Datos de la nueva factura</legend>
                 <div class="row g-3 mb-3">
                     <div class="col-md-6 col-lg-3">
                         <label for="alta-punto-venta" class="form-label">Punto de venta</label>
@@ -70,7 +94,10 @@
                     </div>
                     <div class="col-md-6 col-lg-3">
                         <label for="alta-cliente" class="form-label">Cliente</label>
-                        <select id="alta-cliente" class="form-select" required></select>
+                        <div class="input-group">
+                            <input id="alta-cliente" class="form-control" readonly placeholder="Seleccione un cliente">
+                            <button type="button" id="btn-alta-cliente" class="btn btn-outline-primary" aria-label="Buscar cliente para nueva factura">Buscar</button>
+                        </div>
                     </div>
                     <div class="col-md-6 col-lg-3">
                         <label for="alta-condicion-iva" class="form-label">Condición de IVA</label>
@@ -91,16 +118,17 @@
                 </div>
 
                 <!-- Tabla dinámica de ítems -->
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle tabla-items">
+                <p class="ayuda-tabla">La tabla de ítems se puede desplazar horizontalmente.</p>
+                <div class="table-responsive tabla-contenedor" role="region" aria-label="Ítems de la factura, tabla desplazable" tabindex="0">
+                    <table class="table align-middle tabla-items" aria-label="Ítems de la nueva factura">
                         <thead class="table-light">
                         <tr>
-                            <th>Artículo</th>
-                            <th>Cantidad</th>
-                            <th>Bonif. %</th>
-                            <th class="numero">Precio unit.</th>
-                            <th class="numero">Subtotal</th>
-                            <th></th>
+                            <th scope="col">Artículo y lista</th>
+                            <th scope="col">Cantidad</th>
+                            <th scope="col">Bonif. %</th>
+                            <th scope="col" class="numero">Precio unit.</th>
+                            <th scope="col" class="numero">Subtotal</th>
+                            <th scope="col">Acción</th>
                         </tr>
                         </thead>
                         <tbody id="items-tbody"></tbody>
@@ -114,42 +142,54 @@
                     </table>
                 </div>
 
-                <div class="d-flex justify-content-between">
+                <div class="d-flex justify-content-between alta-acciones">
                     <button type="button" id="btn-agregar-item" class="btn btn-outline-primary">+ Agregar ítem</button>
                     <button type="submit" id="btn-crear" class="btn btn-success">Crear factura</button>
                 </div>
+                </fieldset>
             </form>
         </div>
-    </section>
+    </details>
 
     <!-- ===================== 3. LISTADO ===================== -->
-    <section class="card">
-        <div class="card-header fw-semibold d-flex justify-content-between">
-            <span>Comprobantes registrados</span>
-            <span id="listado-resumen" class="text-muted fw-normal"></span>
-        </div>
+    <details id="panel-listado" class="card panel-plegable" open>
+        <summary class="card-header fw-semibold">
+            <span class="panel-titulo">Comprobantes registrados</span>
+            <span id="listado-resumen" class="panel-resumen" role="status" aria-live="polite"></span>
+        </summary>
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
+            <table class="table table-hover align-middle mb-0 tabla-facturas" aria-label="Facturas encontradas" role="table">
+                <thead role="rowgroup">
                 <tr>
-                    <th>N°</th>
-                    <th>Fecha</th>
-                    <th>Cliente</th>
-                    <th>Cond. IVA</th>
-                    <th>Punto de venta</th>
-                    <th class="numero">Ítems</th>
-                    <th class="numero">Total</th>
-                    <th>Estado</th>
-                    <th>CAE</th>
-                    <th>Acciones</th>
+                    <th scope="col">Comprobante</th>
+                    <th scope="col">Cliente</th>
+                    <th scope="col" class="numero">Importe</th>
+                    <th scope="col">Estado y ARCA</th>
+                    <th scope="col">Acciones</th>
                 </tr>
                 </thead>
-                <tbody id="facturas-tbody"></tbody>
+                <tbody id="facturas-tbody" role="rowgroup"></tbody>
             </table>
         </div>
-    </section>
+        <nav class="card-footer d-flex flex-wrap align-items-center justify-content-between gap-3" aria-label="Paginación de facturas">
+            <div class="d-flex align-items-center gap-2">
+                <label for="tamanio-pagina" class="form-label mb-0">Por página</label>
+                <select id="tamanio-pagina" class="form-select w-auto">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <button type="button" id="btn-pagina-anterior" class="btn btn-outline-secondary" disabled>Anterior</button>
+                <span id="pagina-resumen">Sin resultados</span>
+                <button type="button" id="btn-pagina-siguiente" class="btn btn-outline-secondary" disabled>Siguiente</button>
+            </div>
+        </nav>
+    </details>
 
-</div>
+</main>
 
 <script type="module" src="js/app.js"></script>
 </body>

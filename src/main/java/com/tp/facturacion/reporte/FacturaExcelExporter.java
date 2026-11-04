@@ -23,8 +23,8 @@ import com.tp.facturacion.dto.FacturaReporteDto;
 public class FacturaExcelExporter {
 
     private static final String[] ENCABEZADOS = {
-        "N° Factura", "Fecha", "Cliente", "Condición IVA",
-        "Punto de venta", "Importe total", "Ítems"
+        "N° local", "Fecha", "Cliente", "Condición IVA",
+        "Punto de venta", "Importe total", "Ítems", "N° fiscal", "Estado fiscal"
     };
 
     public byte[] exportar(List<FacturaReporteDto> facturas) {
@@ -84,6 +84,8 @@ public class FacturaExcelExporter {
                 importe.setCellStyle(estiloImporte);
 
                 fila.createCell(6).setCellValue(f.getCantidadItems());
+                fila.createCell(7).setCellValue(f.numeroFiscalFormateado());
+                fila.createCell(8).setCellValue(f.estadoFiscalTexto());
             }
 
             // Totales como fórmulas: Excel los recalcula si se edita una celda

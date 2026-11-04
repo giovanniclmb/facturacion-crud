@@ -15,11 +15,24 @@ export interface FacturaReporteDTO {
     cantidadItems: number;
     estado: EstadoFactura;
     cae: string | null;
+    estadoFiscal: import('./arca.dto.js').EstadoFiscal | null;
+    numeroFiscal: number | null;
+    puntoVentaFiscal: number | null;
+    puntoVentaNumero: number | null;
+    tipoComprobanteFiscal: number | null;
+    caeVencimiento: string | null;
+    mensajeArca: string | null;
+    puedeAutorizar: boolean;
+    puedeConsultar: boolean;
+    puedeModificar: boolean;
+    puedeAnular: boolean;
+    puedeEliminar: boolean;
 }
 
 /** Espejo de FacturaDetalleRequestDto (un ítem en POST/PUT). */
 export interface FacturaDetalleRequestDTO {
     articuloId: number;
+    listaPrecioArticuloId?: number;
     cantidad: number;
     porcentajeBonificacion?: number;
     descripcion?: string;
@@ -43,10 +56,22 @@ export interface FacturaRequestDTO {
 
 /** Espejo de FacturaFiltroDto (parámetros de GET /api/facturas). */
 export interface FacturaFiltrosDTO {
+    numeroFactura?: number;
+    clienteId?: number;
+    sinInformarArca?: boolean;
     fechaDesde?: string;             // "yyyy-MM-dd"
     fechaHasta?: string;
     estado?: EstadoFactura;
     montoMinimo?: number;
+}
+
+/** Página de resultados; pagina comienza en cero en la API. */
+export interface PaginaDTO<T> {
+    contenido: T[];
+    pagina: number;
+    tamanio: number;
+    totalElementos: number;
+    totalPaginas: number;
 }
 
 /** Espejo de ErrorResponse (cuerpo de cualquier respuesta de error). */
@@ -66,4 +91,20 @@ export interface OpcionDTO {
 /** Espejo de ArticuloOpcionDto (catálogo de artículos con su precio vigente). */
 export interface ArticuloOpcionDTO extends OpcionDTO {
     precio: number;
+}
+
+export interface ClienteExplorerDTO {
+    id: number;
+    denominacion: string;
+    cuitCuil: string;
+}
+
+export interface ListaPrecioArticuloExplorerDTO {
+    id: number;
+    articuloId: number;
+    articuloCodigo: string;
+    articuloDenominacion: string;
+    listaPrecioCodigo: string;
+    listaPrecioDenominacion: string;
+    precioVenta: number;
 }

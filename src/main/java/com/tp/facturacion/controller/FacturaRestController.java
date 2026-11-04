@@ -18,6 +18,9 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 
 import com.tp.facturacion.dto.FacturaFiltroDto;
+import com.tp.facturacion.dto.PaginaDto;
+import com.tp.facturacion.dto.PaginacionDto;
+import jakarta.validation.Valid;
 import com.tp.facturacion.dto.FacturaReporteDto;
 import com.tp.facturacion.reporte.FacturaExcelExporter;
 import com.tp.facturacion.reporte.FacturaPdfExporter;
@@ -47,20 +50,21 @@ public class FacturaRestController {
 
     // GET /api/facturas → JSON
     @GetMapping
-    public List<FacturaReporteDto> buscar(@ModelAttribute FacturaFiltroDto filtro) {
-        return buscarFacturas(filtro);
+    public PaginaDto<FacturaReporteDto> buscar(@Valid @ModelAttribute FacturaFiltroDto filtro,
+                                             @Valid @ModelAttribute PaginacionDto paginacion) {
+        return facturaService.buscarFacturasPaginadas(filtro, paginacion);
     }
 
     // GET /api/facturas/reporte/pdf → descarga PDF
     @GetMapping("/reporte/pdf")
-    public ResponseEntity<byte[]> reportePdf(@ModelAttribute FacturaFiltroDto filtro) {
+    public ResponseEntity<byte[]> reportePdf(@Valid @ModelAttribute FacturaFiltroDto filtro) {
         byte[] pdf = pdfExporter.exportar(buscarFacturas(filtro));
         return descarga(pdf, MediaType.APPLICATION_PDF, "reporte-facturas.pdf");
     }
 
     // GET /api/facturas/reporte/excel → descarga .xlsx
     @GetMapping("/reporte/excel")
-    public ResponseEntity<byte[]> reporteExcel(@ModelAttribute FacturaFiltroDto filtro) {
+    public ResponseEntity<byte[]> reporteExcel(@Valid @ModelAttribute FacturaFiltroDto filtro) {
         byte[] excel = excelExporter.exportar(buscarFacturas(filtro));
         return descarga(excel, XLSX, "reporte-facturas.xlsx");
     }
@@ -97,9 +101,7 @@ public class FacturaRestController {
 }
 
     private List<FacturaReporteDto> buscarFacturas(FacturaFiltroDto filtro) {
-        return facturaService.buscarFacturasFiltradas(
-                filtro.getFechaDesde(), filtro.getFechaHasta(),
-                filtro.getEstado(), filtro.getMontoMinimo());
+        return facturaService.buscarFacturasFiltradas(filtro);
     }
 
     private ResponseEntity<byte[]> descarga(byte[] contenido, MediaType tipo, String nombreArchivo) {

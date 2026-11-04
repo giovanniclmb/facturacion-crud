@@ -41,6 +41,17 @@ public class FacturaVenta extends AuditoriaApp {
     @Column(nullable = false)
     private double importeTotal;
 
+    @Column(name="numero_fiscal")
+    private Long numeroFiscal;
+    @Column(name="punto_venta_fiscal")
+    private Integer puntoVentaFiscal;
+    @Column(name="tipo_comprobante_fiscal")
+    private Integer tipoComprobanteFiscal;
+    @Column(name="ambiente_fiscal", columnDefinition = "text")
+    private String ambienteFiscal;
+    @Column(name="emisor_fiscal", columnDefinition = "text")
+    private String emisorFiscal;
+
     private String cae;
 
     @Temporal(TemporalType.TIMESTAMP)

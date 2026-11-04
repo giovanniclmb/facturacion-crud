@@ -30,6 +30,16 @@
 		<java.version>21</java.version>
 	</properties>
 	<dependencies>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>1.86</version>
+        </dependency>
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
@@ -123,4 +133,8 @@
 		</plugins>
 	</build>
 
+ <profiles><profile><id>arca-postgres</id><build><plugins><plugin>
+ <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+ <configuration><systemPropertyVariables><arca.postgres>true</arca.postgres></systemPropertyVariables></configuration>
+ </plugin></plugins></build></profile></profiles>
 </project>

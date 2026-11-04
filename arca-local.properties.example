@@ -1,0 +1,17 @@
+# Copiar como arca-local.properties (ignorado por Git).
+# Las variables se resuelven desde el entorno del proceso Java.
+# Mantener certificado, clave y ticket fuera del repositorio facturacion-crud.
+arca.habilitado=true
+arca.cuit=${ARCA_CUIT:}
+arca.certificado=${ARCA_CERTIFICADO:}
+arca.clave-privada=${ARCA_CLAVE_PRIVADA:}
+arca.ticket-cache=${ARCA_TICKET_CACHE:}
+
+# Solo homologación; los destinos se validan y no aceptan producción.
+arca.wsaa-url=https://wsaahomo.afip.gov.ar/ws/services/LoginCms
+arca.wsfe-url=https://wswhomo.afip.gov.ar/wsfev1/service.asmx
+
+# Emisión/recuperación requieren una declaración explícita de uso exclusivo.
+# Dejar vacío hasta acordar un punto que no use otro sistema para ese emisor/tipo.
+# Ejemplo solo si se cumple esa precondición: arca.puntos-venta-exclusivos=1
+arca.puntos-venta-exclusivos=${ARCA_PUNTOS_VENTA_EXCLUSIVOS:}

@@ -1,6 +1,8 @@
 package com.tp.facturacion.exception;
 
 import java.util.List;
+import com.tp.facturacion.arca.ArcaConfiguracionException;
+import com.tp.facturacion.arca.ArcaRemotaException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,11 +13,30 @@ import org.springframework.validation.BindException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ArcaConfiguracionException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ErrorResponse manejarConfiguracionArca(ArcaConfiguracionException ex) {
+        return new ErrorResponse(503, ex.getMessage());
+    }
+
+    @ExceptionHandler(ArcaRemotaException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public ErrorResponse manejarRespuestaArca(ArcaRemotaException ex) {
+        return new ErrorResponse(502, ex.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse manejarParametroInvalido(MethodArgumentTypeMismatchException ex) {
+        return new ErrorResponse(400, "Formato inválido para el parámetro " + ex.getName());
+    }
 
     // El recurso pedido no existe → 404
     @ExceptionHandler(RecursoNoEncontradoException.class)

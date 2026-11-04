@@ -21,6 +21,9 @@ public class FacturaDetalleRequestDto {
     @Positive(groups = {FacturaRequestDto.Alta.class, Default.class})
     private Double cantidad;
 
+    @Positive(groups = {FacturaRequestDto.Alta.class, Default.class})
+    private Long listaPrecioArticuloId;
+
     // Opcionales
     @PositiveOrZero(groups = {FacturaRequestDto.Alta.class, Default.class})
     @DecimalMax(value = "100", groups = {FacturaRequestDto.Alta.class, Default.class})

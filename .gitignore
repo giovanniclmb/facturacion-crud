@@ -33,3 +33,19 @@ build/
 .vscode/
 
 arca-local.properties
+
+# Material privado ARCA; los XML sintéticos de tests permanecen visibles.
+*.key
+*.pem
+*.crt
+*.cer
+*.csr
+*.p12
+*.pfx
+*arca*ticket*
+*.ticket.properties
+*.ticket.lock
+ticket-wsfe.properties
+ticket-wsfe.properties.lock
+ticket*.properties
+ticket*.lock

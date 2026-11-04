@@ -2,14 +2,17 @@
   "name": "facturacion-frontend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "start": "http-server public -p 3000 -c-1",
     "dev": "concurrently -n tsc,web \"tsc --watch\" \"http-server public -p 3000 -c-1\""
   },
   "devDependencies": {
     "concurrently": "^10.0.6",
     "http-server": "^14.1.1",
+    "jsdom": "^30.1.3",
     "typescript": "^7.0.2"
   }
 }

@@ -1,2 +1,5 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+
+# Conservar el WSDL original y su huella (CRLF del servicio público).
+src/test/resources/arca/autorizacion/wsfe-homologacion.wsdl -text whitespace=cr-at-eol

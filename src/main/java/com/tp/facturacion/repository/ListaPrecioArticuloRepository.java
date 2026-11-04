@@ -8,6 +8,6 @@ import com.tp.facturacion.model.ListaPrecioArticulo;
 
 public interface ListaPrecioArticuloRepository extends JpaRepository<ListaPrecioArticulo, Long> {
 
-    // Precio vigente de un artículo: el último cargado que no esté dado de baja
-    Optional<ListaPrecioArticulo> findFirstByArticuloIdAndFechaBajaIsNullOrderByIdDesc(Long articuloId);
+    // Último precio cargado con precio, artículo y lista activos.
+    Optional<ListaPrecioArticulo> findFirstByArticuloIdAndFechaBajaIsNullAndArticuloFechaBajaIsNullAndListaPrecioFechaBajaIsNullOrderByIdDesc(Long articuloId);
 }
