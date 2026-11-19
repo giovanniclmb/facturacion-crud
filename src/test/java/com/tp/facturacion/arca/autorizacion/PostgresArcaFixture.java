@@ -15,8 +15,11 @@ abstract class PostgresArcaFixture {
   schema="arca_test_"+UUID.randomUUID().toString().replace("-","");
   try(Connection c=abrirBase()){c.createStatement().execute("CREATE SCHEMA "+schema);}
   try(Connection c=abrir()){
-   String base=Files.readString(Path.of("src/test/resources/arca/autorizacion/base-heredada.sql"));
-   c.createStatement().execute(base);migrar(c);
+   try (Statement sql=c.createStatement()) {
+    sql.execute(Files.readString(Path.of("db/bootstrap/000_esquema_base.sql")));
+    sql.execute(Files.readString(Path.of("src/test/resources/arca/autorizacion/datos-fixture.sql")));
+   }
+   migrar(c);
   }
  }
  Connection abrirBase() throws SQLException {return DriverManager.getConnection(url,user,password);}

@@ -228,18 +228,16 @@ Para las pruebas DOM con jsdom: Node 22.22.2+ en la rama 22, 24.15.0+ en la rama
 
 ### 1. Base de datos
 
-Crear la base `facturacion_crud` con los datos maestros cargados (clientes, artículos, listas de
-precios, puntos de venta, etc.). El proyecto se probó con una copia de la base del TP
-[jpa-facturacion](https://github.com/giovanniclmb/jpa-facturacion):
+Con PostgreSQL activo y un usuario local que pueda crear una base, ejecutar desde la raíz del clon:
 
 ```bash
-createdb -T facturacion facturacion_crud
+createdb facturacion_crud
+psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/bootstrap/demo_local.sql
 ```
 
-Ajustar usuario y clave en `src/main/resources/application.properties`. El arranque usa
-`ddl-auto=validate`: la base debe contener el esquema heredado y la
-[migración ARCA](docs/arca/MIGRACION_AUTORIZACION.md). No usar `ddl-auto=update` para
-crear las restricciones de intentos fiscales; las define la migración explícita.
+El script prepara una **base vacía** con el esquema, las dos migraciones, los catálogos de ejemplo y los clientes de demostración. Para una base existente, aplicar únicamente las migraciones que le falten. Hibernate usa `ddl-auto=validate`.
+
+El backend usa `jdbc:postgresql://localhost:5432/facturacion_crud` y toma el usuario de `PGUSER` o del usuario del sistema. Si PostgreSQL usa otro usuario, URL o contraseña, definir `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_URL` y `SPRING_DATASOURCE_PASSWORD` en la terminal del backend según corresponda.
 
 ### 2. Backend
 
@@ -253,11 +251,13 @@ API disponible en `http://localhost:8080/api/facturas`.
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
 Abrir `http://localhost:3000`. `npm run dev` recompila TypeScript ante cada cambio y sirve la carpeta `public/`.
+
+La base de arranque permite crear un **comprobante interno** y abrir su PDF con ARCA deshabilitada. Para obtener un CAE hace falta la configuración local de [homologación ARCA](docs/arca/HOMOLOGACION.md#preparar-la-demo-en-otro-equipo). El punto `99001` del catálogo es un ejemplo y debe corresponder a la habilitación del emisor configurado.
 
 ## Estructura
 
@@ -296,8 +296,7 @@ sin datos privados. El comprobante interno y los reportes funcionan sin credenci
 
 Para emitir: aplicar la [migración aditiva](docs/arca/MIGRACION_AUTORIZACION.md), configurar
 `arca.puntos-venta-exclusivos` y seguir la [guía de autorización](docs/arca/HOMOLOGACION.md).
-La base local ya fue migrada; el arranque usa `ddl-auto=validate` y no crea restricciones
-fiscales implícitamente. No declarar un punto exclusivo si también lo usa otro sistema.
+El arranque usa `ddl-auto=validate` y las migraciones crean las restricciones fiscales. No declarar un punto exclusivo si también lo usa otro sistema.
 
 El diagnóstico **no emite CAE ni modifica facturas**. Consulta el estado del servicio,
 obtiene/reutiliza un ticket privado, consulta puntos de venta y el último número autorizado;

@@ -214,8 +214,8 @@ conceptual DocTipo99/0 no se implementa como fallback para documentos inválidos
 
 ## Preparar la demo en otro equipo
 
-1. Preparar la base local del integrador con los catálogos y el usuario de sistema de ID `1`. Aplicar las migraciones de esquema según [las instrucciones del repositorio](../../README.md).
-2. Desde la raíz del proyecto, cargar los receptores y los precios de ejemplo:
+1. Si el equipo parte de un clon, preparar una base vacía con el arranque completo de [las instrucciones del repositorio](../../README.md#cómo-ejecutarlo). Ese proceso también carga los catálogos y receptores de ejemplo.
+2. Si ya existe una base migrada con el usuario de sistema de ID `1`, cargar los receptores y los precios desde la raíz del proyecto:
 
    ```sh
    psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/demo/clientes_arca.sql
