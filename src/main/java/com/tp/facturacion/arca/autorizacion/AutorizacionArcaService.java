@@ -25,6 +25,9 @@ public class AutorizacionArcaService {
     public FacturaArcaDto estado(long facturaId) { return almacen.estado(facturaId); }
 
     public FacturaArcaDto autorizar(long facturaId, boolean confirmarCuit) {
+        return autorizar(facturaId, confirmarCuit, null);
+    }
+    public FacturaArcaDto autorizar(long facturaId, boolean confirmarCuit, Long revision) {
         FacturaArcaDto previo=almacen.estado(facturaId);
         // Un segundo clic no puede despachar un intento pendiente o autorizado.
         if (previo.cae()!=null && !previo.cae().isBlank() || activo(previo.estadoFiscal())) return previo;
@@ -38,7 +41,9 @@ public class AutorizacionArcaService {
                 .map(CondicionIvaReceptor::id).collect(Collectors.toSet());
         if (iva.isEmpty()) throw new ArcaRemotaException();
         Serie serie=new Serie("HOMOLOGACION",props.getCuit(),previo.puntoVenta(),11);
-        Reserva reserva=almacen.reservar(facturaId,serie,iva,true);
+        Reserva reserva=revision == null
+                ? almacen.reservar(facturaId,serie,iva,true)
+                : almacen.reservar(facturaId,serie,iva,true,revision);
         if (!reserva.creada()) return almacen.estado(facturaId);
         return prepararYEnviar(facturaId,previo,reserva,serie,ticket);
     }

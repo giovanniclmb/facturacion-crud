@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mockups de facturación</title>
+    <link rel="stylesheet" href="../../../design-system/tokens.css">
+    <link rel="stylesheet" href="mockups.css">
+    <script src="../../../design-system/brand.js" defer></script>
+    <script src="mockups.js" defer></script>
+</head>
+<body>
+<main>
+    <header>
+        <h1 data-brand-name></h1>
+        <nav aria-label="Pantallas de la maqueta">
+            <a href="?vista=listado">Comprobantes</a><a href="?vista=alta">Nueva Factura C</a>
+            <a href="?vista=consumidor">Consumidor final</a><a href="?vista=edicion">Editar</a>
+            <a href="?vista=articulos">Buscar artículos</a><a href="?vista=pdf">PDF autorizado</a>
+            <a href="?vista=interno">PDF interno</a>
+        </nav>
+    </header>
+
+    <section data-vista="listado">
+        <div class="cabecera"><h2>Comprobantes registrados</h2><a class="boton principal" href="?vista=alta">Nueva factura</a></div>
+        <div class="barra">
+            <label>Orden por fecha<select><option>Más nuevas primero</option><option>Más antiguas primero</option></select></label>
+            <div class="acciones"><button type="button">Reporte PDF</button><button type="button">Excel</button></div>
+        </div>
+        <table aria-label="Comprobantes" role="table">
+            <thead role="rowgroup"><tr role="row"><th>Comprobante</th><th>Cliente</th><th class="numero">Importe</th><th>Estado y ARCA</th><th>Acciones</th></tr></thead>
+            <tbody role="rowgroup">
+                <tr role="row"><td role="cell" data-label="Comprobante"><strong>Factura C 99001-00000018</strong><small>18/11/2026</small></td><td role="cell" data-label="Cliente">Cliente de ejemplo</td><td role="cell" data-label="Importe" class="numero">$ 25.000,00</td><td role="cell" data-label="Estado y ARCA"><span class="estado exito">Autorizada</span><small>CAE de homologación</small></td><td role="cell" data-label="Acciones"><a class="boton" href="?vista=pdf">Ver comprobante</a></td></tr>
+                <tr role="row"><td role="cell" data-label="Comprobante"><strong>Factura C · N.º local 36</strong><small>18/11/2026</small></td><td role="cell" data-label="Cliente">Cliente de ejemplo</td><td role="cell" data-label="Importe" class="numero">$ 12.500,00</td><td role="cell" data-label="Estado y ARCA"><span class="estado error">Rechazada</span><small>La fecha de emisión está fuera del rango admitido.</small></td><td role="cell" data-label="Acciones"><a class="boton" href="?vista=edicion">Editar</a></td></tr>
+                <tr role="row"><td role="cell" data-label="Comprobante"><strong>Factura C · N.º local 35</strong><small>17/11/2026</small></td><td role="cell" data-label="Cliente">Cliente de ejemplo</td><td role="cell" data-label="Importe" class="numero">$ 8.500,00</td><td role="cell" data-label="Estado y ARCA"><span class="estado aviso">Resultado incierto</span><small>Esperando confirmación de ARCA.</small></td><td role="cell" data-label="Acciones"><button type="button">Consultar ARCA</button></td></tr>
+                <tr role="row"><td role="cell" data-label="Comprobante"><strong>Comprobante interno N.º 34</strong><small>17/11/2026</small></td><td role="cell" data-label="Cliente">Consumidor final</td><td role="cell" data-label="Importe" class="numero">$ 4.500,00</td><td role="cell" data-label="Estado y ARCA"><span class="estado">Interno</span></td><td role="cell" data-label="Acciones"><a class="boton" href="?vista=interno">Ver comprobante</a></td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section data-vista="formulario" hidden>
+        <div class="cabecera"><h2 id="titulo-formulario">Nueva factura</h2></div>
+        <div class="contenido">
+            <p class="mensaje error" id="rechazo" hidden><strong>Solicitud rechazada por ARCA.</strong> La fecha de emisión está fuera del rango admitido.</p>
+            <div class="campos">
+                <label>Tipo de comprobante<select id="tipo"><option value="alta">Factura C</option><option value="consumidor">Consumidor final · interno</option></select></label>
+                <label>Punto de venta<select id="punto"><option>99001 · Homologación</option><option>1 · Mostrador</option></select></label>
+                <div id="cliente">
+                    <label for="cliente-nombre">Cliente (obligatorio)</label>
+                    <div class="grupo"><input id="cliente-nombre" readonly value="Cliente de ejemplo"><button type="button">Buscar</button></div>
+                </div>
+                <label>Fecha de emisión<input type="date" value="2026-11-18"></label>
+                <label>Moneda<select><option>Pesos argentinos</option></select></label>
+                <label>Lista de precios<select><option>General</option><option>Mayorista</option></select></label>
+            </div>
+            <h3>Ítems</h3>
+            <div class="item">
+                <div><strong>Artículo de ejemplo</strong><small>Precio General · $ 12.500,00</small></div>
+                <label>Cantidad<input type="number" min="1" value="1"></label>
+                <label>Bonificación (%)<input type="number" min="0" max="100" value="0"></label>
+                <div><small>Subtotal</small><strong>$ 12.500,00</strong></div>
+            </div>
+            <a class="boton" href="?vista=articulos">Agregar artículo</a>
+            <p class="total">Total estimado <strong>$ 12.500,00</strong></p>
+        </div>
+        <div class="pie"><p id="nota-formulario">Al guardar se enviará la solicitud de CAE a ARCA en homologación.</p>
+            <div class="acciones"><a class="boton" href="?vista=listado">Cancelar</a><button type="button" class="principal" id="guardar">Guardar y solicitar CAE</button></div>
+        </div>
+    </section>
+
+    <section data-vista="articulos" hidden>
+        <div class="cabecera"><h2>Buscar artículos</h2><a class="boton" href="?vista=alta">Volver a la factura</a></div>
+        <div class="barra">
+            <label>Artículo<input type="search" placeholder="Código o descripción"></label>
+            <label>Lista de la factura<select id="lista"><option>General</option><option>Mayorista</option></select></label>
+        </div>
+        <table aria-label="Precios de artículos" role="table">
+            <thead role="rowgroup"><tr role="row"><th>Artículo</th><th>Lista aplicada</th><th class="numero">Precio</th><th>Acción</th></tr></thead>
+            <tbody role="rowgroup">
+                <tr role="row"><td role="cell" data-label="Artículo"><strong>Artículo de ejemplo A</strong></td><td role="cell" data-label="Lista aplicada" id="lista-a">General</td><td role="cell" data-label="Precio" class="numero" id="precio-a">$ 12.500,00</td><td role="cell" data-label="Acción"><a class="boton" href="?vista=alta">Seleccionar</a></td></tr>
+                <tr role="row"><td role="cell" data-label="Artículo"><strong>Artículo de ejemplo B</strong></td><td role="cell" data-label="Lista aplicada">General<small id="alternativa" hidden>Sin precio Mayorista</small></td><td role="cell" data-label="Precio" class="numero">$ 8.500,00</td><td role="cell" data-label="Acción"><a class="boton" href="?vista=alta">Seleccionar</a></td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <div data-vista="comprobante" hidden>
+        <div class="barra-pdf"><a class="boton" href="?vista=listado">Volver al listado</a><button class="principal" id="imprimir" type="button">Imprimir</button></div>
+        <article class="hoja" aria-label="Vista previa del comprobante">
+            <header class="datos-pdf"><div><strong>Emisor de ejemplo</strong><small>Domicilio comercial (TBD)</small><small>CUIT del emisor (TBD)</small></div><div><h2 id="tipo-pdf">Factura C</h2><strong id="numero-pdf">99001-00000018</strong><small>Fecha de emisión 18/11/2026</small></div></header>
+            <p class="leyenda" id="leyenda-pdf">Homologación · comprobante de prueba</p>
+            <p><strong>Receptor</strong><br><span id="receptor-pdf">Cliente de ejemplo · CUIT del receptor (TBD)</span></p>
+            <table class="renglones"><thead><tr><th>Artículo</th><th class="numero">Cant.</th><th class="numero">Subtotal</th></tr></thead>
+                <tbody><tr><td>Artículo de ejemplo</td><td class="numero">2</td><td class="numero">$ 25.000,00</td></tr></tbody>
+            </table>
+            <p class="total">Total <strong>$ 25.000,00</strong></p>
+            <footer id="datos-fiscales"><div class="qr">QR de ejemplo</div><div><strong>CAE (TBD)</strong><small>Vencimiento (TBD)</small></div></footer>
+        </article>
+    </div>
+</main>
+</body>
+</html>

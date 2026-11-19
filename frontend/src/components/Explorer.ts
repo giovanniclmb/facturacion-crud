@@ -12,6 +12,7 @@ interface OpcionesExplorer<T> {
     titulo: string;
     ayuda: string;
     columnas: Columna<T>[];
+    filtro?: HTMLElement;
     describir: (registro: T) => string;
     buscar: (texto: string, pagina: number) => Promise<PaginaDTO<T>>;
 }
@@ -66,6 +67,13 @@ export class Explorer<T> {
         buscar.type = 'submit';
         controles.append(this.campo, buscar);
         formulario.append(ayuda, etiqueta, controles);
+        if (opciones.filtro) {
+            formulario.append(opciones.filtro);
+            opciones.filtro.addEventListener('change', () => {
+                this.textoAplicado = this.campo.value.trim();
+                void this.cargar(0);
+            });
+        }
         formulario.addEventListener('submit', evento => {
             evento.preventDefault();
             this.textoAplicado = this.campo.value.trim();
@@ -138,7 +146,9 @@ export class Explorer<T> {
             for (const registro of resultado.contenido) {
                 const fila = crear('tr');
                 for (const columna of this.opciones.columnas) {
-                    fila.append(crear('td', columna.numero ? 'numero' : '', columna.valor(registro)));
+                    const celda = crear('td', columna.numero ? 'numero' : '', columna.valor(registro));
+                    celda.dataset.label = columna.titulo;
+                    fila.append(celda);
                 }
                 const boton = crear('button', 'btn btn-outline-primary', 'Seleccionar');
                 boton.type = 'button';
@@ -147,7 +157,7 @@ export class Explorer<T> {
                     this.seleccionado = registro;
                     this.dialogo.close();
                 });
-                const acciones = crear('td');
+                const acciones = crear('td', 'explorer-accion');
                 acciones.append(boton);
                 fila.append(acciones);
                 this.cuerpo.append(fila);

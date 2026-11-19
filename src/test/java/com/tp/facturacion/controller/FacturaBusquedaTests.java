@@ -38,11 +38,13 @@ class FacturaBusquedaTests {
     @Autowired FacturaPdfExporter pdfExporter;
     @Autowired FacturaExcelExporter excelExporter;
     @Autowired JdbcTemplate jdbc;
+    @Autowired com.tp.facturacion.service.GuardarFacturaService guardado;
+    @Autowired com.tp.facturacion.reporte.ComprobantePdfExporter comprobantes;
     MockMvc mvc;
 
     @BeforeEach
     void preparar() {
-        mvc = MockMvcBuilders.standaloneSetup(new FacturaRestController(service, pdfExporter, excelExporter))
+        mvc = MockMvcBuilders.standaloneSetup(new FacturaRestController(service, pdfExporter, excelExporter, guardado, comprobantes))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
         jdbc.update("DELETE FROM factura_venta_detalle");
@@ -67,7 +69,7 @@ class FacturaBusquedaTests {
 
     @Test
     void paginaConservaOrdenYCuentaFacturas() throws Exception {
-        mvc.perform(get("/api/facturas").param("pagina", "1").param("tamanio", "1"))
+        mvc.perform(get("/api/facturas").param("pagina", "1").param("tamanio", "1").param("ordenFecha", "ASC"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.contenido", hasSize(1)))
                 .andExpect(jsonPath("$.contenido[0].id").value(2))
                 .andExpect(jsonPath("$.contenido[0].cantidadItems").value(2))
@@ -76,10 +78,19 @@ class FacturaBusquedaTests {
     }
 
     @Test
+    void desempataPorIdAunqueLasHorasDelMismoDiaSeanDistintas() throws Exception {
+        jdbc.update("UPDATE factura_venta SET fechaEmision=TIMESTAMP '2026-10-01 02:00:00' WHERE id=1");
+        mvc.perform(get("/api/facturas")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.contenido[*].id", contains(4, 3, 2, 1)));
+        mvc.perform(get("/api/facturas").param("ordenFecha", "ASC")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.contenido[*].id", contains(1, 2, 3, 4)));
+    }
+
+    @Test
     void valoresPorDefectoYPaginaFueraDelTotal() throws Exception {
         mvc.perform(get("/api/facturas")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.pagina").value(0)).andExpect(jsonPath("$.tamanio").value(20))
-                .andExpect(jsonPath("$.contenido", hasSize(4)));
+                .andExpect(jsonPath("$.contenido[*].id", contains(4, 3, 2, 1)));
         mvc.perform(get("/api/facturas").param("pagina", "10")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.contenido", empty())).andExpect(jsonPath("$.totalElementos").value(4));
     }
@@ -96,15 +107,15 @@ class FacturaBusquedaTests {
     @Test
     void distingueCaeNuloVacioEspaciosYAsignado() throws Exception {
         mvc.perform(get("/api/facturas").param("sinInformarArca", "true"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.contenido[*].id", contains(1, 3, 4)));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.contenido[*].id", contains(4, 3, 1)));
         mvc.perform(get("/api/facturas").param("sinInformarArca", "false"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.contenido[*].id", contains(2)));
     }
 
     @ParameterizedTest
     @CsvSource({
-            "numeroFactura,7,1:2", "clienteId,1,1:3:4", "estado,EMITIDA,2",
-            "montoMinimo,300,3:4", "fechaDesde,2026-10-02,4", "fechaHasta,2026-10-01,1:2:3",
+            "numeroFactura,7,2:1", "clienteId,1,4:3:1", "estado,EMITIDA,2",
+            "montoMinimo,300,4:3", "fechaDesde,2026-10-02,4", "fechaHasta,2026-10-01,3:2:1",
             "numeroFactura,999,''"
     })
     void aplicaCadaFiltroAlContenidoYAlTotal(String parametro, String valor, String ids) throws Exception {

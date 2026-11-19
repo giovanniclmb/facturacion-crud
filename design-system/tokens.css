@@ -1,0 +1,36 @@
+:root {
+    --fondo: #f3f5f8;
+    --panel: #fff;
+    --tinta: #172235;
+    --secundario: #526079;
+    --borde: #d9e0e9;
+    --borde-control: #8a97a9;
+    --suave: #f6f8fb;
+    --accion: #2057a4;
+    --accion-hover: #184985;
+    --exito-tinta: #0a3622;
+    --exito-fondo: #d1e7dd;
+    --aviso-tinta: #664d03;
+    --aviso-fondo: #fff3cd;
+    --error-tinta: #58151c;
+    --error-fondo: #f8d7da;
+    --neutral-fondo: #e9ecef;
+    --fuente: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --texto: 1rem;
+    --texto-pequeno: .875rem;
+    --espacio-1: .5rem;
+    --espacio-2: .75rem;
+    --espacio-3: 1rem;
+    --espacio-4: 1.25rem;
+    --ancho: 1240px;
+    --alto-control: 44px;
+    --radio-control: 6px;
+    --radio-panel: 12px;
+    --sombra-foco: 0 0 0 .2rem #2057a426;
+    --foco: 3px solid var(--accion);
+    --movimiento: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root { --movimiento: 0ms; }
+}

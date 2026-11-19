@@ -43,14 +43,17 @@ class ReservaArcaPostgresTests extends PostgresArcaFixture {
   try{return almacen.reservar(factura,serie,Set.of(6),true).creada();}
   catch(ReglaNegocioException esperado){return false;}
  }
- @Test void propietarioAnteriorNoPuedeEnviarYRechazoConservaHistorial() {
+ @Test void propietarioAnteriorNoPuedeEnviarYRechazoConservaHistorial() throws Exception {
   iniciarValidando();
   Reserva original=almacen.reservar(1,serie,Set.of(6),true);
   Reserva nuevaPropiedad=almacen.recuperarPreparando(1);
   assertTrue(almacen.comenzarEnvio(original,1).isEmpty());
   assertTrue(almacen.comenzarEnvio(nuevaPropiedad,1).isPresent());
-  almacen.finalizar(original.intento(),new ResultadoEnvio(false,null,null,List.of(new ErrorFiscal(1,"Rechazo")),List.of()));
+  almacen.finalizar(original.intento(),new ResultadoEnvio(false,null,null,List.of(),List.of(new ErrorFiscal(1,"Rechazo. ".repeat(40)))));
   assertTrue(almacen.estado(1).puedeModificar());
+  try (Connection c=abrir()) {
+   assertEquals(255,count(c,"SELECT char_length(motivorechazo) FROM factura_venta WHERE id=1"));
+  }
   assertThrows(ReglaNegocioException.class,()->app.getBean(com.tp.facturacion.service.FacturaService.class).eliminar(1L));
   Reserva otra=almacen.reservar(1,serie,Set.of(6),true);
   assertNotEquals(original.intento(),otra.intento());

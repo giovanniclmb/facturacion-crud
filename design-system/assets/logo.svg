@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="56" viewBox="0 0 200 56" role="img" aria-labelledby="title">
+  <title id="title">Logo provisorio</title>
+  <rect x="1" y="1" width="198" height="54" rx="6" fill="#f6f8fb" stroke="#526079" stroke-dasharray="5 4"/>
+  <text x="100" y="33" fill="#172235" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15">Logo provisorio</text>
+</svg>

@@ -6,8 +6,8 @@ facturas, genera **reportes en PDF y Excel**, y se consume desde un **frontend w
 
 Incluye conexión WSAA/WSFEv1, diagnóstico, autorización de Factura C y recuperación de
 resultados inciertos de **ARCA (ex AFIP)** en homologación. ARCA está deshabilitada por
-defecto. La emisión requiere declarar un punto de venta de uso exclusivo y una acción
-explícita del usuario; no se informa una factura automáticamente al guardarla.
+defecto. Al guardar explícitamente una Factura C, la aplicación solicita CAE para el
+punto de venta exclusivo configurado. Los comprobantes internos se guardan por separado.
 
 ## Stack
 
@@ -22,6 +22,21 @@ explícita del usuario; no se informa una factura automáticamente al guardarla.
 | ARCA | HttpClient de Java · SOAP 1.1 · BouncyCastle 1.86 para firma CMS |
 | Frontend | TypeScript 7 · HTML5 · Bootstrap 5.3 · `fetch` con `async`/`await` |
 | Build | Maven (backend) · `tsc` + npm (frontend) |
+
+## Alta, edición e impresión
+
+- **Factura C** exige un cliente del padrón y confirmación del CUIT. El guardado solicita CAE en homologación. Un rechazo conserva la factura editable y el motivo. Si el resultado es incierto, usar **Consultar ARCA** desde la grilla.
+- **Consumidor final** genera un comprobante interno sin cliente ni CAE. Las facturas pendientes o rechazadas se pueden editar. El punto de venta permanece fijo y se recalculan los ítems a precio vigente.
+- La lista **General** se selecciona inicialmente. Si falta un precio en la lista elegida, se muestra el de General con su origen. Para cargar ejemplos Mayorista en una base de demostración, usar [precios_mayorista.sql](db/demo/precios_mayorista.sql).
+- **Comprobantes registrados** ordena por fecha de emisión descendente. El selector, el desempate por ID y el orden se aplican también a PDF y Excel. **Ver comprobante** abre el PDF individual en todas las filas. Cuando la autorización no está confirmada, el PDF se identifica como copia sin validez fiscal. **Estado de ARCA** muestra el último estado registrado de cada comprobante.
+
+En una base existente, aplicar después de la migración ARCA:
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/migrations/002_correcciones_facturacion.sql
+```
+
+El PDF usa `facturacion.emisor-denominacion` y `facturacion.emisor-domicilio` de la configuración local si están definidos. Para homologación, el CUIT fiscal y los datos del QR provienen del intento autorizado.
 
 ## Arquitectura
 
@@ -262,8 +277,6 @@ facturacion-crud/
 
 ## Próximos pasos
 
-- Acordar una factura de prueba y un punto exclusivo para comprobar el primer CAE real
-  de homologación. Certificado, autorización WSASS y diagnóstico real ya están verificados.
 - Ampliaciones futuras: otros tipos de documento, servicios y moneda extranjera. Producción
   sigue fuera del alcance implementado.
 
@@ -271,7 +284,7 @@ facturacion-crud/
 
 La [guía de configuración y diagnóstico](docs/arca/HOMOLOGACION.md) explica cómo reutilizar
 el CSR existente, gestionar WSASS y completar `arca-local.properties` a partir del ejemplo
-sin datos privados. El proyecto funciona sin credenciales con `arca.habilitado=false`.
+sin datos privados. El comprobante interno y los reportes funcionan sin credenciales con `arca.habilitado=false`.
 
 Para emitir: aplicar la [migración aditiva](docs/arca/MIGRACION_AUTORIZACION.md), configurar
 `arca.puntos-venta-exclusivos` y seguir la [guía de autorización](docs/arca/HOMOLOGACION.md).
@@ -329,5 +342,4 @@ Giovanni — [github.com/giovanniclmb](https://github.com/giovanniclmb)
 
 Verificación de autorización (03/11/2026): 218 pruebas backend y 35 frontend aprobadas;
 incluye PostgreSQL real en esquemas aislados y circuito completo con persistencia y ARCA
-simulada. Migración local aplicada, datos previos conservados. Primera emisión real de
-CAE de homologación pendiente de acordar factura y punto exclusivo.
+simulada. Migración local aplicada, datos previos conservados. El resultado de la primera emisión y la consulta remota está documentado en la [guía de homologación](docs/arca/HOMOLOGACION.md).

@@ -1,6 +1,7 @@
 import { FacturaArcaDTO } from '../models/arca.dto.js';
 import {
     EstadoFactura,
+    FacturaEdicionDTO,
     FacturaFiltrosDTO,
     FacturaReporteDTO,
     FacturaRequestDTO,
@@ -25,6 +26,21 @@ export class FacturaService {
             method: 'POST',
             body: JSON.stringify(factura)
         });
+    }
+
+    obtenerDetalle(id: number): Promise<FacturaEdicionDTO> {
+        return pedir<FacturaEdicionDTO>(`${this.baseUrl}/${id}/detalle`);
+    }
+
+    guardarEdicion(id: number, factura: FacturaRequestDTO): Promise<FacturaReporteDTO> {
+        return pedir<FacturaReporteDTO>(`${this.baseUrl}/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(factura)
+        });
+    }
+
+    urlComprobante(id: number): string {
+        return `${this.baseUrl}/${id}/comprobante`;
     }
 
     /** PUT /api/facturas/{id} con solo estado (y observaciones) → 200 */

@@ -76,3 +76,22 @@ test('ARCA usa los contratos explícitos, acepta 202 y nunca reintenta POST', as
         assert.equal(llamadas.length, 4);
     } finally { globalThis.fetch = original; }
 });
+
+test('la edición carga su detalle y guarda con revisión, y el PDF individual tiene ruta propia', async () => {
+    const original = globalThis.fetch;
+    const llamadas = [];
+    globalThis.fetch = async (url, opciones = {}) => {
+        llamadas.push([new URL(url).pathname, opciones]);
+        return Response.json({ id: 7 });
+    };
+    try {
+        const servicio = new FacturaService();
+        await servicio.obtenerDetalle(7);
+        await servicio.guardarEdicion(7, { tipoComprobante: 'FACTURA_C', revision: 2 });
+        assert.deepEqual(llamadas.map(([url, op]) => [url, op.method ?? 'GET']), [
+            ['/api/facturas/7/detalle', 'GET'], ['/api/facturas/7', 'PUT']
+        ]);
+        assert.equal(JSON.parse(llamadas[1][1].body).revision, 2);
+        assert.equal(new URL(servicio.urlComprobante(7)).pathname, '/api/facturas/7/comprobante');
+    } finally { globalThis.fetch = original; }
+});

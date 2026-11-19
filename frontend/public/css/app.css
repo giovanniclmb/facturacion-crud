@@ -118,3 +118,20 @@ dialog.explorer::backdrop { background: #17223580; }
     .arca-acciones { max-width: none; }
     .arca-estado { max-width: none; }
 }
+
+#alta-campo-confirmacion label { min-height: 44px; display: inline-flex; align-items: center; }
+#alta-campo-confirmacion input { margin-top: .85rem; }
+#panel-listado > .card-body { border-bottom: 1px solid var(--app-linea); }
+
+.app-main [hidden] { display: none !important; }
+
+@media (max-width: 767.98px) {
+    #explorer-precios .ayuda-tabla { display: none; }
+    #explorer-precios table, #explorer-precios tbody { display: block; }
+    #explorer-precios thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    #explorer-precios tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid var(--app-linea); }
+    #explorer-precios tbody td { padding: 0; border: 0; min-width: 0; overflow-wrap: anywhere; }
+    #explorer-precios tbody td[data-label]::before { display: block; content: attr(data-label); color: var(--app-secundario); font-size: .75rem; }
+    #explorer-precios .explorer-accion, #explorer-precios td[colspan] { grid-column: 1 / -1; }
+    #explorer-precios tbody td.numero { text-align: left; white-space: normal; }
+}

@@ -20,6 +20,8 @@ public class SnapshotFiscalFactory {
     public Snapshot crear(FacturaVenta factura,String emisor,Set<Integer> ivaClaseC,boolean confirmarCuitReceptor) {
         exigir(confirmarCuitReceptor,"Confirme que el documento del receptor es un CUIT.");
         exigir(factura!=null && "PENDIENTE".equals(factura.getEstado()) && (factura.getCae()==null || factura.getCae().isBlank()),"Solo se puede informar una factura pendiente sin CAE.");
+        exigir(factura.getTipoComprobante()!=com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL,
+                "El comprobante interno no permite autorización fiscal.");
         exigir(factura.getCliente()!=null,"La factura no tiene receptor.");
         String documento=factura.getCliente().getCuitCuil();
         exigir(cuitValido(documento) && cuitValido(emisor) && !documento.equals(emisor),"El CUIT del receptor debe ser válido y distinto del emisor.");

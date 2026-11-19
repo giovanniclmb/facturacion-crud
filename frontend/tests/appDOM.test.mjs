@@ -94,15 +94,15 @@ test('recarga bloquea acciones también en handlers antes de diálogos y las rec
     t.after(() => app.cerrar());
     gate = diferida();
     const carga = app.api.cargarFacturas();
-    assert.equal(app.document.querySelector('.acciones button:first-child').disabled, true);
-    assert.equal(app.document.querySelector('.acciones button:nth-child(2)').disabled, true);
+    assert.equal(app.document.querySelector('.btn-anular').disabled, true);
+    assert.equal(app.document.querySelector('.btn-eliminar').disabled, true);
     await app.api.anularFactura(factura);
     await app.api.eliminarFactura(factura);
     assert.equal(app.prompts, 0);
     assert.equal(app.confirms, 0);
     gate.resolver(respuesta(pagina([factura])));
     await carga;
-    assert.equal(app.document.querySelector('.acciones button:first-child').disabled, false);
+    assert.equal(app.document.querySelector('.btn-anular').disabled, false);
 });
 
 for (const accion of ['anular', 'eliminar']) {
@@ -122,8 +122,8 @@ for (const accion of ['anular', 'eliminar']) {
         assert.equal(solicitudes, 1);
         assert.equal(dialogos, 1);
         assert.equal(bloqueadas, true);
-        assert.equal(app.document.querySelector('.acciones button:first-child').disabled, false);
-        assert.equal(app.document.querySelector('.acciones button:nth-child(2)').disabled, false);
+        assert.equal(app.document.querySelector('.btn-anular').disabled, false);
+        assert.equal(app.document.querySelector('.btn-eliminar').disabled, false);
     });
 }
 
@@ -135,10 +135,10 @@ test('CAE conserva acciones bloqueadas, cinco celdas guardan datos completos y e
     assert.match(porId(app, 'listado-resumen').textContent, /de 1 comprobante ·/);
     assert.equal(fila.cells.length, 5);
     assert.deepEqual([...fila.cells].map(c => c.dataset.label), ['Comprobante', 'Cliente', 'Importe', 'Estado y ARCA', 'Acciones']);
-    for (const dato of ['42', '30/10/2026', 'Ana', 'Monotributo', 'Local principal', '2', '200,00', 'EMITIDA', conCae.cae, 'Solo lectura']) assert.ok(fila.textContent.includes(dato), dato);
-    assert.equal(app.document.querySelector('.acciones button:first-child').disabled, true);
-    assert.equal(app.document.querySelector('.acciones button:nth-child(2)').disabled, true);
-    assert.match(app.document.querySelector('.acciones button:nth-child(2)').getAttribute('aria-label'), /42/);
+    for (const dato of ['42', '30/10/2026', 'Ana', 'Monotributo', 'Local principal', '2', '200,00', 'CAE histórico', conCae.cae, 'Solo lectura']) assert.ok(fila.textContent.includes(dato), dato);
+    assert.equal(app.document.querySelector('.btn-anular').disabled, true);
+    assert.equal(app.document.querySelector('.btn-eliminar').disabled, true);
+    assert.match(app.document.querySelector('.btn-eliminar').getAttribute('aria-label'), /42/);
 });
 
 test('mensajes respetan reducción de movimiento', async t => {
@@ -159,4 +159,42 @@ test('acciones distinguen facturas con el mismo número en diferentes puntos de 
         assert.ok(etiquetas[0].includes('Local principal'));
         assert.ok(etiquetas[1].includes('Sucursal centro'));
     }
+});
+
+test('la lista elegida en el buscador vuelve al formulario de la factura', async t => {
+    const app = await montar({
+        resolver: r => {
+            if (r.url.endsWith('/catalogos/listas-precio')) {
+                return respuesta([{ id: 1, descripcion: 'General' }, { id: 2, descripcion: 'Mayorista' }]);
+            }
+            if (r.url.includes('/listas-precio-articulos/precio?')) return respuesta(precio);
+        }
+    });
+    t.after(() => app.cerrar());
+    app.document.querySelector('.btn-buscar-articulo').click();
+    await flush();
+    const lista = porId(app, 'explorer-lista-precio');
+    assert.ok(lista);
+    assert.equal(lista.value, '1');
+    lista.value = '2';
+    lista.dispatchEvent(new app.window.Event('change', { bubbles: true }));
+    await flush();
+    const consulta = app.llamados.filter(r => r.url.includes('/listas-precio-articulos/explorer')).at(-1);
+    assert.equal(new URL(consulta.url).searchParams.get('listaPrecioId'), '2');
+    app.document.querySelector('#explorer-precios tbody button').click();
+    await flush();
+    assert.equal(porId(app, 'alta-lista-precio').value, '2');
+});
+
+test('los comprobantes existentes e internos ofrecen PDF y estado de ARCA', async t => {
+    const interno = { ...factura, id: 2, tipoComprobante: 'CONSUMIDOR_FINAL', puedeImprimir: false };
+    const app = await montar({ resolver: r => r.url.includes('/facturas?')
+        ? respuesta(pagina([factura, interno])) : undefined });
+    t.after(() => app.cerrar());
+    for (const fila of porId(app, 'facturas-tbody').rows) {
+        assert.equal(fila.querySelector('a[target="_blank"]').hidden, false);
+        assert.equal(fila.querySelector('.btn-recargar-arca').hidden, false);
+        assert.equal(fila.querySelector('.btn-recargar-arca').textContent, 'Estado de ARCA');
+    }
+    assert.match(porId(app, 'facturas-tbody').rows[1].textContent, /No aplica/);
 });

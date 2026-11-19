@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comprobantes registrados</title>
+  <link rel="stylesheet" href="../../../design-system/tokens.css">
+  <link rel="stylesheet" href="../mockups-facturacion/mockups.css">
+  <script src="../../../design-system/brand.js" defer></script>
+  <style>
+    .acciones { margin: 0; }
+    .detalle { margin: .5rem 0 0; max-width: 40ch; }
+    .hoja { margin-block: 1.5rem; }
+    .nota { color: var(--secundario); }
+    @media print { main > section, main > nav { display: none; } .hoja { display: block !important; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1 data-brand-name></h1><p class="nota">Vista de propuesta con datos de ejemplo</p></header>
+  <section aria-labelledby="titulo">
+    <div class="cabecera"><h2 id="titulo">Comprobantes registrados</h2></div>
+    <table aria-label="Comprobantes" role="table">
+      <thead><tr><th>Comprobante</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <tbody>
+        <tr><td data-label="Comprobante"><strong>Factura C 99001-00000018</strong></td><td data-label="Estado"><span class="estado exito">Autorizada</span></td><td data-label="Acciones"><div class="acciones"><button type="button" data-pdf="autorizada">Ver comprobante</button><button type="button" data-estado="Autorizada en ARCA homologación.">Estado de ARCA</button></div></td></tr>
+        <tr><td data-label="Comprobante"><strong>Factura C · N.º local 36</strong></td><td data-label="Estado"><span class="estado aviso">Pendiente</span></td><td data-label="Acciones"><div class="acciones"><button type="button" data-pdf="pendiente">Ver comprobante</button><button type="button" data-estado="Pendiente. Esta factura todavía está sin CAE.">Estado de ARCA</button></div></td></tr>
+        <tr><td data-label="Comprobante"><strong>Factura C · N.º local 35</strong></td><td data-label="Estado"><span class="estado error">Rechazada</span></td><td data-label="Acciones"><div class="acciones"><button type="button" data-pdf="rechazada">Ver comprobante</button><button type="button" data-estado="Rechazada por ARCA. La fecha está fuera del rango admitido.">Estado de ARCA</button></div></td></tr>
+        <tr><td data-label="Comprobante"><strong>Comprobante interno N.º 34</strong></td><td data-label="Estado"><span class="estado">Interno</span></td><td data-label="Acciones"><div class="acciones"><button type="button" data-pdf="interno">Ver comprobante</button><button type="button" data-estado="No aplica. Es un comprobante interno.">Estado de ARCA</button></div></td></tr>
+      </tbody>
+    </table>
+  </section>
+  <article class="hoja" id="comprobante" hidden>
+    <h2 id="titulo-copia">Factura C · N.º local 36</h2>
+    <p class="leyenda" id="leyenda">Copia interna · sin CAE · sin validez fiscal</p>
+    <p id="estado-copia">Pendiente de autorización</p>
+    <p>Artículo de ejemplo · 1 unidad</p>
+    <p class="total">Total <strong>$ 12.500,00</strong></p>
+  </article>
+</main>
+<script>
+  const ejemplos = {
+    autorizada: ['Factura C 99001-00000018', 'Homologación · comprobante de prueba', 'Autorizada · CAE y QR'],
+    pendiente: ['Factura C · N.º local 36', 'Copia interna · sin CAE · sin validez fiscal', 'Pendiente de autorización'],
+    rechazada: ['Factura C · N.º local 35', 'Copia interna · sin CAE · sin validez fiscal', 'Rechazada por ARCA'],
+    interno: ['Comprobante interno N.º 34', 'Comprobante interno · sin validez fiscal', 'Estado de ARCA: no aplica']
+  };
+  document.querySelectorAll('[data-pdf]').forEach(boton => boton.addEventListener('click', () => {
+    const [titulo, leyenda, estado] = ejemplos[boton.dataset.pdf];
+    document.querySelector('#titulo-copia').textContent = titulo;
+    document.querySelector('#leyenda').textContent = leyenda;
+    document.querySelector('#estado-copia').textContent = estado;
+    const copia = document.querySelector('#comprobante');
+    copia.hidden = false;
+    copia.scrollIntoView();
+  }));
+  document.querySelectorAll('[data-estado]').forEach(boton => boton.addEventListener('click', () => {
+    const celda = boton.closest('td');
+    const anterior = celda.querySelector('.detalle');
+    if (anterior) { anterior.remove(); return; }
+    const texto = document.createElement('p');
+    texto.className = 'detalle';
+    texto.role = 'status';
+    texto.textContent = boton.dataset.estado;
+    celda.append(texto);
+  }));
+  if (location.search === '?copia=pendiente') document.querySelector('#comprobante').hidden = false;
+</script>
+</body>
+</html>

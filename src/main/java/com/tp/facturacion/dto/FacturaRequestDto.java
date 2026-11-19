@@ -24,11 +24,14 @@ public class FacturaRequestDto {
     @NotNull(groups = Alta.class)
     private Long puntoVentaId;
 
-    @NotNull(groups = Alta.class)
     private Long clienteId;
-
-    @NotNull(groups = Alta.class)
     private Long condicionIvaId;
+
+    private com.tp.facturacion.model.TipoComprobante tipoComprobante;
+    private Long listaPrecioId;
+    private Long revision;
+    private java.util.UUID operacionGuardado;
+    private boolean confirmarCuitReceptor;
 
     @NotNull(groups = Alta.class)
     private Long tipoMonedaId;

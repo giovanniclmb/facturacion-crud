@@ -78,7 +78,7 @@
 
     <!-- ===================== 2. ALTA ===================== -->
     <details id="panel-alta" class="card panel-plegable">
-        <summary class="card-header fw-semibold"><span class="panel-titulo">Nueva factura</span></summary>
+        <summary class="card-header fw-semibold"><span class="panel-titulo" id="titulo-formulario">Nueva factura</span></summary>
         <div class="card-body">
             <div class="catalogos-barra mb-3">
                 <p id="catalogos-estado" class="small text-muted" role="status" aria-live="polite">Cargando opciones para el alta…</p>
@@ -87,19 +87,27 @@
             <form id="form-alta" novalidate>
                 <fieldset id="alta-campos" disabled>
                 <legend class="visually-hidden">Datos de la nueva factura</legend>
+                <div class="alert alert-danger" id="alta-rechazo" hidden></div>
                 <div class="row g-3 mb-3">
+                    <div class="col-md-6 col-lg-3">
+                        <label for="alta-tipo" class="form-label">Tipo de comprobante</label>
+                        <select id="alta-tipo" class="form-select">
+                            <option value="FACTURA_C">Factura C</option>
+                            <option value="CONSUMIDOR_FINAL">Consumidor final · interno</option>
+                        </select>
+                    </div>
                     <div class="col-md-6 col-lg-3">
                         <label for="alta-punto-venta" class="form-label">Punto de venta</label>
                         <select id="alta-punto-venta" class="form-select" required></select>
                     </div>
-                    <div class="col-md-6 col-lg-3">
-                        <label for="alta-cliente" class="form-label">Cliente</label>
+                    <div class="col-md-6 col-lg-3" id="alta-campo-cliente">
+                        <label for="alta-cliente" class="form-label">Cliente (obligatorio)</label>
                         <div class="input-group">
                             <input id="alta-cliente" class="form-control" readonly placeholder="Seleccione un cliente">
                             <button type="button" id="btn-alta-cliente" class="btn btn-outline-primary" aria-label="Buscar cliente para nueva factura">Buscar</button>
                         </div>
                     </div>
-                    <div class="col-md-6 col-lg-3">
+                    <div class="col-md-6 col-lg-3" id="alta-campo-iva">
                         <label for="alta-condicion-iva" class="form-label">Condición de IVA</label>
                         <select id="alta-condicion-iva" class="form-select" required></select>
                     </div>
@@ -111,7 +119,11 @@
                         <label for="alta-fecha" class="form-label">Fecha de emisión</label>
                         <input type="date" id="alta-fecha" class="form-control" required>
                     </div>
-                    <div class="col-md-8 col-lg-9">
+                    <div class="col-md-6 col-lg-3">
+                        <label for="alta-lista-precio" class="form-label">Lista de precios</label>
+                        <select id="alta-lista-precio" class="form-select" required></select>
+                    </div>
+                    <div class="col-md-8 col-lg-6">
                         <label for="alta-observaciones" class="form-label">Observaciones</label>
                         <input type="text" id="alta-observaciones" class="form-control" maxlength="255">
                     </div>
@@ -142,9 +154,16 @@
                     </table>
                 </div>
 
-                <div class="d-flex justify-content-between alta-acciones">
+                <div id="alta-campo-confirmacion" class="form-check mt-3">
+                    <input id="alta-confirmar-cuit" class="form-check-input" type="checkbox">
+                    <label for="alta-confirmar-cuit" class="form-check-label">Confirmo el CUIT del receptor para solicitar CAE en homologación.</label>
+                </div>
+                <div class="d-flex justify-content-between alta-acciones gap-2">
                     <button type="button" id="btn-agregar-item" class="btn btn-outline-primary">+ Agregar ítem</button>
-                    <button type="submit" id="btn-crear" class="btn btn-success">Crear factura</button>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" id="btn-cancelar-edicion" class="btn btn-outline-secondary" hidden>Cancelar</button>
+                        <button type="submit" id="btn-crear" class="btn btn-primary">Guardar y solicitar CAE</button>
+                    </div>
                 </div>
                 </fieldset>
             </form>
@@ -157,6 +176,13 @@
             <span class="panel-titulo">Comprobantes registrados</span>
             <span id="listado-resumen" class="panel-resumen" role="status" aria-live="polite"></span>
         </summary>
+        <div class="card-body d-flex flex-wrap align-items-center gap-2">
+            <label for="orden-fecha" class="form-label mb-0">Orden por fecha</label>
+            <select id="orden-fecha" class="form-select w-auto">
+                <option value="DESC">Más nuevas primero</option>
+                <option value="ASC">Más antiguas primero</option>
+            </select>
+        </div>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0 tabla-facturas" aria-label="Facturas encontradas" role="table">
                 <thead role="rowgroup">

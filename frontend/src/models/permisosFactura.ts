@@ -11,7 +11,7 @@ export function permisosFactura(factura: FacturaPermisos): {
     const pendiente = ['PREPARANDO', 'ENVIANDO', 'INCIERTO'].includes(factura.estadoFiscal ?? '');
     const bloqueada = autorizada || pendiente;
     return {
-        modificar: !bloqueada && factura.puedeModificar !== false,
+        modificar: !bloqueada && factura.estado === 'PENDIENTE' && factura.puedeModificar !== false,
         anular: !bloqueada && factura.estado !== 'ANULADA' && factura.puedeAnular !== false,
         eliminar: !bloqueada && factura.puedeEliminar !== false,
         autorizar: !bloqueada && factura.estado !== 'ANULADA' && factura.puedeAutorizar === true,

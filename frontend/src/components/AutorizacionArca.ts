@@ -21,7 +21,7 @@ export class AutorizacionArca {
     private readonly etiqueta = document.createElement('label');
     private readonly informar = this.boton('Informar a ARCA', 'btn-informar-arca');
     private readonly consultar = this.boton('Consultar ARCA', 'btn-consultar-arca');
-    private readonly recargar = this.boton('Recargar estado ARCA', 'btn-recargar-arca');
+    readonly recargar = this.boton('Estado de ARCA', 'btn-recargar-arca');
     private ocupado = false;
     private recuperacionFallida = false;
     private detalle?: FacturaArcaDTO;
@@ -43,7 +43,7 @@ export class AutorizacionArca {
         this.informar.addEventListener('click', () => { void this.ejecutar('autorizar'); });
         this.consultar.addEventListener('click', () => { void this.ejecutar('consultar'); });
         this.recargar.addEventListener('click', () => { void this.ejecutar('estado'); });
-        this.acciones.append(this.etiqueta, this.informar, this.consultar, this.recargar);
+        this.acciones.append(this.etiqueta, this.informar, this.consultar);
         this.actualizar();
     }
 
@@ -57,7 +57,8 @@ export class AutorizacionArca {
 
     actualizarDatos(estado: FacturaArcaDTO): void {
         this.detalle = estado;
-        Object.assign(this.factura, estado);
+        const { tipoComprobante, ...datos } = estado;
+        Object.assign(this.factura, datos, { tipoComprobanteFiscal: tipoComprobante });
         this.actualizar();
     }
 
@@ -74,8 +75,7 @@ export class AutorizacionArca {
         this.confirmar.disabled = bloqueada;
         this.consultar.hidden = !permisos.consultar;
         this.consultar.disabled = bloqueada || !permisos.consultar;
-        this.recargar.hidden = !this.recuperacionFallida && !this.factura.estadoFiscal;
-        const textoLectura = this.recuperacionFallida ? 'Recargar estado ARCA' : 'Ver estado ARCA';
+        const textoLectura = this.recuperacionFallida ? 'Recargar estado ARCA' : 'Estado de ARCA';
         this.recargar.textContent = textoLectura;
         this.recargar.setAttribute('aria-label', `${textoLectura}, factura N° ${this.factura.numeroFactura}, ${this.factura.puntoVentaDescripcion}`);
         // La lectura permite recuperar incluso cuando las mutaciones están bloqueadas.
@@ -86,13 +86,19 @@ export class AutorizacionArca {
 
     private mostrarEstado(): void {
         const f = this.factura;
-        const fragmentos = [f.estadoFiscal ?? (f.cae?.trim() ? 'AUTORIZADO' : 'Sin informar')];
+        if (f.tipoComprobante === 'CONSUMIDOR_FINAL') {
+            this.estado.textContent = 'No aplica. Es un comprobante interno.';
+            return;
+        }
+        const historico = !f.estadoFiscal && Boolean(f.cae?.trim());
+        const fragmentos = f.estadoFiscal ? [f.estadoFiscal] : [historico ? 'CAE histórico sin verificar' : 'Sin CAE'];
         const permisos = permisosFactura(f);
         if (!permisos.anular && !permisos.eliminar) fragmentos.push('Solo lectura');
         else if (!permisos.eliminar) fragmentos.push('Historial fiscal: borrado bloqueado');
         if (f.numeroFiscal != null) fragmentos.push(`N° fiscal ${f.numeroFiscal}`);
-        if (this.detalle) fragmentos.push(`${this.detalle.ambiente} · Punto ${this.detalle.puntoVenta} · Tipo ${this.detalle.tipoComprobante}`);
-        fragmentos.push(f.cae?.trim() ? `CAE ${f.cae.trim()}` : 'Sin CAE');
+        if (this.detalle?.ambiente) fragmentos.push(`${this.detalle.ambiente} · Punto ${this.detalle.puntoVenta} · Tipo ${this.detalle.tipoComprobante}`);
+        if (f.cae?.trim()) fragmentos.push(`CAE ${f.cae.trim()}`);
+        else if (f.estadoFiscal) fragmentos.push('Sin CAE');
         if (f.caeVencimiento) fragmentos.push(`Vencimiento CAE ${f.caeVencimiento}`);
         if (this.detalle?.mensaje) fragmentos.push(this.detalle.mensaje);
         else if (!this.detalle && f.mensajeArca) fragmentos.push(f.mensajeArca);
@@ -106,7 +112,7 @@ export class AutorizacionArca {
         if (this.ocupado || (operacion !== 'estado' && this.coordinacion.bloqueada())) return;
         if (operacion === 'autorizar' && (!permisos.autorizar || !this.confirmar.checked)) return;
         if (operacion === 'consultar' && !permisos.consultar) return;
-        const conservarFoco = this.acciones.contains(document.activeElement);
+        const conservarFoco = this.acciones.contains(document.activeElement) || document.activeElement === this.recargar;
         this.ocupado = true;
         this.coordinacion.iniciar();
         this.coordinacion.bloquearRecuperacion(true);

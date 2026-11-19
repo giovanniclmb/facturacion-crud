@@ -77,6 +77,50 @@ class FacturaCrudConsignasTests {
     }
 
     @Test
+    void internoSinClienteUsaGeneralComoAlternativaYPuedeImprimirse() throws Exception {
+        auditada("condicion_iva", "id,codigoAfip,denominacion", "2,5,'Consumidor final'");
+        jdbc.update("UPDATE lista_precio SET codigo='GEN', denominacion='General' WHERE id=1");
+        auditada("lista_precio", "id,codigo,denominacion", "2,'MAY','Mayorista'");
+        auditada("lista_precio_articulo", "id,articulo_id,lista_precio_id,precioVenta", "3,1,2,75");
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""
+                {"tipoComprobante":"CONSUMIDOR_FINAL","puntoVentaId":1,"tipoMonedaId":1,"listaPrecioId":2,"operacionGuardado":"b8eb577c-c13b-4e47-95dd-f21bdddedab2",
+                 "detalles":[{"articuloId":1,"cantidad":2},{"articuloId":2,"cantidad":2}]}
+                """))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.importeTotal").value(201.0))
+                .andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"));
+        mvc.perform(get("/api/facturas/100/arca"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.mensaje").value("No aplica. Es un comprobante interno."));
+        assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
+        mvc.perform(get("/api/facturas/100/detalle"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.listaPrecioId").value(2))
+                .andExpect(jsonPath("$.detalles[1].listaPrecioArticuloId").value(2));
+        mvc.perform(get("/api/facturas/100/comprobante")).andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline")));
+    }
+
+    @Test
+    void guardarFacturaCAutomaticamenteConArcaDeshabilitadaConservaElAlta() throws Exception {
+        jdbc.update("UPDATE lista_precio SET codigo='GEN', denominacion='General' WHERE id=1");
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""
+                {"tipoComprobante":"FACTURA_C","puntoVentaId":1,"clienteId":1,"condicionIvaId":1,
+                 "tipoMonedaId":1,"listaPrecioId":1,"confirmarCuitReceptor":true,
+                 "operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547a",
+                 "detalles":[{"articuloId":1,"cantidad":1}]}
+                """))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(100))
+                .andExpect(jsonPath("$.mensajeArca").isNotEmpty());
+        byte[] pdf = mvc.perform(get("/api/facturas/100/comprobante"))
+                .andExpect(status().isOk()).andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andReturn().getResponse().getContentAsByteArray();
+        try (var lector = new org.openpdf.text.pdf.PdfReader(pdf)) {
+            String texto = new org.openpdf.text.pdf.parser.PdfTextExtractor(lector).getTextFromPage(1);
+            assertTrue(texto.contains("sin validez fiscal"));
+            assertTrue(texto.contains("Sin CAE"));
+        }
+    }
+
+    @Test
     void altaPersisteCabeceraYMultiplesDetallesConCascadaEImportesDeFacturaC() throws Exception {
         long id = crear();
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM factura_venta", Integer.class));

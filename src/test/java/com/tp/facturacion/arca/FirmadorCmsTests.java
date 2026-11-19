@@ -16,8 +16,10 @@ class FirmadorCmsTests {
         String tra="<loginTicketRequest>contenido UTF-8 á</loginTicketRequest>";
         var cms=new CMSSignedData(Base64.getDecoder().decode(new FirmadorCms().firmarBase64(tra,cred)));
         assertArrayEquals(tra.getBytes(StandardCharsets.UTF_8),(byte[])cms.getSignedContent().getContent());
-        assertEquals(1,cms.getCertificates().getMatches(null).size());
+        var certificados = cms.getCertificates().getMatches(null);
+        assertEquals(1, certificados.size());
+        assertArrayEquals(material.certificado().getEncoded(), certificados.iterator().next().getEncoded());
         assertEquals(1,cms.getSignerInfos().size());
-        for(var firma:cms.getSignerInfos().getSigners()) assertTrue(firma.verify(new JcaSimpleSignerInfoVerifierBuilder().build(material.certificado())));
+        for(var firma:cms.getSignerInfos().getSigners()) assertTrue(firma.verify(new JcaSimpleSignerInfoVerifierBuilder().build(material.certificado().getPublicKey())));
     }
 }

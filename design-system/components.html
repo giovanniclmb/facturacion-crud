@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sistema visual de Facturación de ventas</title>
+    <link rel="stylesheet" href="tokens.css">
+    <script src="brand.js" defer></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--fondo); color: var(--tinta); font: var(--texto)/1.5 var(--fuente); }
+        main { width: min(100% - 2rem, var(--ancho)); margin: 2rem auto; }
+        h1 { margin: 0; font-size: clamp(1.6rem, 3vw, 2rem); font-weight: 650; letter-spacing: -.025em; }
+        header p { margin: var(--espacio-1) 0 1.75rem; color: var(--secundario); }
+        section, details { margin-bottom: var(--espacio-4); background: var(--panel); border: 1px solid var(--borde); border-radius: var(--radio-panel); }
+        h2, summary { margin: 0; padding: var(--espacio-3) var(--espacio-4); font-size: var(--texto); font-weight: 650; border-bottom: 1px solid var(--borde); }
+        summary { cursor: pointer; }
+        summary::marker { color: var(--accion); }
+        details:not([open]) summary { border-bottom: none; }
+        .contenido { padding: var(--espacio-4); }
+        .campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--espacio-3); }
+        label { display: block; margin-bottom: .4rem; font-size: var(--texto-pequeno); font-weight: 600; }
+        input, select, button { min-height: var(--alto-control); border: 1px solid var(--borde-control); border-radius: var(--radio-control); background: var(--panel); color: inherit; font: inherit; padding: .55rem .9rem; }
+        input, select { width: 100%; }
+        input[readonly] { background: var(--suave); }
+        input:focus, select:focus { box-shadow: var(--sombra-foco); }
+        :focus-visible { outline: var(--foco); outline-offset: 3px; }
+        button { cursor: pointer; font-weight: 600; color: var(--accion); border-color: var(--accion); transition: background var(--movimiento); }
+        button:hover { background: var(--suave); }
+        button:disabled { color: var(--secundario); border-color: var(--borde); cursor: default; }
+        .principal { background: var(--accion); color: var(--panel); }
+        .principal:hover { background: var(--accion-hover); }
+        .acciones { display: flex; flex-wrap: wrap; gap: var(--espacio-1); }
+        .contenido > .acciones { margin-top: var(--espacio-3); }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: var(--espacio-2) var(--espacio-3); border-bottom: 1px solid var(--borde); }
+        th { background: var(--suave); font-size: var(--texto-pequeno); color: var(--secundario); }
+        tbody tr:last-child td { border-bottom: 0; }
+        .numero { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        small { display: block; color: var(--secundario); margin-top: .25rem; }
+        .estado { display: inline-block; padding: .3rem .55rem; border-radius: var(--radio-control); font-size: .8125rem; font-weight: 650; background: var(--neutral-fondo); }
+        .exito { color: var(--exito-tinta); background: var(--exito-fondo); }
+        .aviso { color: var(--aviso-tinta); background: var(--aviso-fondo); }
+        .error { color: var(--error-tinta); background: var(--error-fondo); }
+        .mensaje { margin: 0 0 var(--espacio-3); padding: var(--espacio-2) var(--espacio-3); border-radius: var(--radio-control); }
+        .estados { display: flex; flex-wrap: wrap; gap: var(--espacio-1); }
+        @media (max-width: 767.98px) {
+            main { margin-block: 1.25rem; }
+            .contenido, h2, summary { padding: var(--espacio-3); }
+            table, tbody { display: block; }
+            thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+            tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--espacio-2); padding: var(--espacio-3); border-bottom: 1px solid var(--borde); }
+            tbody tr:last-child { border-bottom: 0; }
+            td { display: block; padding: 0; border: 0; overflow-wrap: anywhere; }
+            td::before { display: block; content: attr(data-label); color: var(--secundario); font-size: .75rem; }
+            td:last-child { grid-column: 1 / -1; }
+            .numero { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <h1 data-brand-name></h1>
+        <p>Referencia de componentes. Los datos de esta página son de ejemplo.</p>
+    </header>
+    <details open>
+        <summary>Filtros y acciones</summary>
+        <div class="contenido">
+            <div class="campos">
+                <div><label for="numero">N.º de factura</label><input id="numero" type="number" min="1"></div>
+                <div><label for="cliente">Cliente</label><input id="cliente" readonly value="Todos"></div>
+                <div><label for="estado">Estado</label><select id="estado"><option>Todos</option><option>Pendiente</option><option>Emitida</option></select></div>
+            </div>
+            <div class="acciones"><button class="principal">Buscar</button><button>Limpiar</button></div>
+        </div>
+    </details>
+    <section aria-labelledby="comprobantes">
+        <h2 id="comprobantes">Comprobantes registrados</h2>
+        <table aria-label="Comprobantes de ejemplo" role="table">
+            <thead role="rowgroup"><tr role="row"><th scope="col">Comprobante</th><th scope="col">Cliente</th><th scope="col" class="numero">Importe</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
+            <tbody role="rowgroup">
+                <tr role="row"><td role="cell" data-label="Comprobante"><strong>Factura C N.º 18</strong><small>18/11/2026</small></td><td role="cell" data-label="Cliente">Cliente de ejemplo</td><td role="cell" data-label="Importe" class="numero">$ 25.000,00</td><td role="cell" data-label="Estado"><span class="estado exito">Autorizada</span></td><td role="cell" data-label="Acciones"><button>Ver comprobante</button></td></tr>
+                <tr role="row"><td role="cell" data-label="Comprobante"><strong>Factura C N.º 17</strong><small>17/11/2026</small></td><td role="cell" data-label="Cliente">Cliente de ejemplo</td><td role="cell" data-label="Importe" class="numero">$ 12.500,00</td><td role="cell" data-label="Estado"><span class="estado aviso">Pendiente</span></td><td role="cell" data-label="Acciones"><button disabled>Ver comprobante</button></td></tr>
+            </tbody>
+        </table>
+    </section>
+    <section aria-labelledby="mensajes">
+        <h2 id="mensajes">Mensajes y estados</h2>
+        <div class="contenido">
+            <p class="mensaje error"><strong>Solicitud rechazada por ARCA.</strong> Revisá los datos del receptor.</p>
+            <div class="estados"><span class="estado exito">Autorizada</span><span class="estado aviso">Pendiente</span><span class="estado aviso">Resultado incierto</span><span class="estado error">Rechazada</span><span class="estado">Anulada</span></div>
+        </div>
+    </section>
+</main>
+</body>
+</html>

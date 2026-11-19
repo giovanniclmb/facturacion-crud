@@ -15,6 +15,9 @@ import lombok.Setter;
 public class FacturaReporteDto {
 
     private Long id;
+    private Long revision;
+    private com.tp.facturacion.model.TipoComprobante tipoComprobante;
+    private boolean puedeImprimir;
     private Long numeroFactura;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd",
@@ -64,13 +67,27 @@ public class FacturaReporteDto {
                 .atZone(java.time.ZoneId.of("America/Argentina/Buenos_Aires")).toLocalDate();
     }
 
+    public FacturaReporteDto(Long id, Long numeroFactura, Date fechaEmision,
+            String clienteDenominacion, String condicionIva, String puntoVentaDescripcion,
+            double importeTotal, long cantidadItems, String estado, String cae, Long numeroFiscal,
+            Integer puntoVentaFiscal, Integer tipoComprobanteFiscal, Date vencimiento, int puntoVentaNumero,
+            com.tp.facturacion.model.TipoComprobante tipoComprobante, String motivoRechazo, Long revision) {
+        this(id, numeroFactura, fechaEmision, clienteDenominacion, condicionIva, puntoVentaDescripcion,
+                importeTotal, cantidadItems, estado, cae, numeroFiscal, puntoVentaFiscal,
+                tipoComprobanteFiscal, vencimiento, puntoVentaNumero);
+        this.tipoComprobante = tipoComprobante;
+        this.mensajeArca = motivoRechazo;
+        this.revision = revision;
+    }
+
     public String numeroFiscalFormateado() {
         if (numeroFiscal == null || puntoVentaFiscal == null || tipoComprobanteFiscal == null)
             return "Sin número fiscal";
         return String.format("%05d-%08d (tipo %d)", puntoVentaFiscal, numeroFiscal, tipoComprobanteFiscal);
     }
     public String estadoFiscalTexto() {
+        if (tipoComprobante == com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL) return "No aplica";
         return estadoFiscal != null ? estadoFiscal.name() :
-                (cae != null && !cae.isBlank() ? "AUTORIZADO (histórico)" : "Sin CAE");
+                (cae != null && !cae.isBlank() ? "CAE histórico sin verificar" : "Sin CAE");
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.data.repository.query.Param;
 import com.tp.facturacion.model.FacturaVenta;
 
 public interface FacturaVentaRepository extends JpaRepository<FacturaVenta, Long> {
+    java.util.Optional<FacturaVenta> findByOperacionGuardado(java.util.UUID operacionGuardado);
+
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select f from FacturaVenta f where f.id = :id")
     java.util.Optional<FacturaVenta> buscarBloqueada(@Param("id") Long id);

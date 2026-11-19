@@ -7,6 +7,11 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.Comparator;
+import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.tp.facturacion.dto.FacturaDetalleRequestDto;
 import com.tp.facturacion.dto.FacturaFiltroDto;
+import com.tp.facturacion.dto.FacturaEdicionDto;
 import com.tp.facturacion.dto.PaginaDto;
 import com.tp.facturacion.dto.PaginacionDto;
 import com.tp.facturacion.dto.FacturaReporteDto;
@@ -22,6 +28,8 @@ import com.tp.facturacion.dto.FacturaRequestDto;
 import com.tp.facturacion.exception.RecursoNoEncontradoException;
 import com.tp.facturacion.model.AuditoriaApp;
 import com.tp.facturacion.model.FacturaVenta;
+import com.tp.facturacion.model.ListaPrecio;
+import com.tp.facturacion.model.TipoComprobante;
 import com.tp.facturacion.model.FacturaVentaDetalle;
 import com.tp.facturacion.model.ListaPrecioArticulo;
 import com.tp.facturacion.model.PuntoVenta;
@@ -50,7 +58,7 @@ public class FacturaService {
     private static final String SELECT_REPORTE =
         "SELECT new " + FacturaReporteDto.class.getName() + "(" +
         "    f.id, f.numero, f.fechaEmision, COALESCE(c.denominacion, 'Consumidor Final'), " +
-        "    ci.denominacion, pv.descripcion, f.importeTotal, COUNT(d), f.estado, f.cae, f.numeroFiscal, f.puntoVentaFiscal, f.tipoComprobanteFiscal, f.caeFechaVencimiento, pv.numero" +
+        "    ci.denominacion, pv.descripcion, f.importeTotal, COUNT(d), f.estado, f.cae, f.numeroFiscal, f.puntoVentaFiscal, f.tipoComprobanteFiscal, f.caeFechaVencimiento, pv.numero, f.tipoComprobante, f.motivoRechazo, f.revision" +
         ") " +
         "FROM FacturaVenta f " +
         "LEFT JOIN f.cliente c " +
@@ -60,7 +68,7 @@ public class FacturaService {
 
     private static final String GROUP_BY_REPORTE =
         "GROUP BY f.id, f.numero, f.fechaEmision, c.denominacion, ci.denominacion, " +
-        "pv.descripcion, f.importeTotal, f.estado, f.cae, f.numeroFiscal, f.puntoVentaFiscal, f.tipoComprobanteFiscal, f.caeFechaVencimiento, pv.numero ";
+        "pv.descripcion, f.importeTotal, f.estado, f.cae, f.numeroFiscal, f.puntoVentaFiscal, f.tipoComprobanteFiscal, f.caeFechaVencimiento, pv.numero, f.tipoComprobante, f.motivoRechazo, f.revision ";
 
     @PersistenceContext
     private EntityManager em;
@@ -73,6 +81,7 @@ public class FacturaService {
     private final TipoMonedaRepository tipoMonedaRepository;
     private final ListaPrecioArticuloRepository listaPrecioArticuloRepository;
     private final UsuarioRepository usuarioRepository;
+    private final ListasFacturaService listas;
     private final com.tp.facturacion.arca.autorizacion.IntentoArcaRepository intentosArca;
 
     @Value("${facturacion.usuario-sistema-id}")
@@ -86,7 +95,8 @@ public class FacturaService {
                           ListaPrecioArticuloRepository listaPrecioArticuloRepository,
                           UsuarioRepository usuarioRepository,
                           com.tp.facturacion.arca.autorizacion.IntentoArcaRepository intentosArca,
-                          com.tp.facturacion.arca.autorizacion.ArcaReporteEnriquecedor arcaReportes) {
+                          com.tp.facturacion.arca.autorizacion.ArcaReporteEnriquecedor arcaReportes, ListasFacturaService listas) {
+        this.listas = listas;
         this.arcaReportes=arcaReportes;
         this.facturaVentaRepository = facturaVentaRepository;
         this.puntoVentaRepository = puntoVentaRepository;
@@ -125,7 +135,8 @@ public class FacturaService {
     private TypedQuery<FacturaReporteDto> consultaReporte(FiltroConsulta consulta) {
         TypedQuery<FacturaReporteDto> query = em.createQuery(
                 SELECT_REPORTE + consulta.where() + GROUP_BY_REPORTE
-                        + "ORDER BY f.fechaEmision, f.numero, f.id", FacturaReporteDto.class);
+                        + "ORDER BY cast(f.fechaEmision as date) " + consulta.orden() + ", f.id " + consulta.orden(),
+                FacturaReporteDto.class);
         consulta.parametros().forEach(query::setParameter);
         return query;
     }
@@ -166,10 +177,11 @@ public class FacturaService {
                     ? "AND (f.cae IS NULL OR TRIM(f.cae) = '') "
                     : "AND f.cae IS NOT NULL AND TRIM(f.cae) <> '' ");
         }
-        return new FiltroConsulta(jpql.toString(), params);
+        return new FiltroConsulta(jpql.toString(), params,
+                filtro.getOrdenFecha() == FacturaFiltroDto.OrdenFecha.ASC ? "ASC" : "DESC");
     }
 
-    private record FiltroConsulta(String where, Map<String, Object> parametros) {
+    private record FiltroConsulta(String where, Map<String, Object> parametros, String orden) {
     }
 
     @Transactional(readOnly = true)
@@ -185,6 +197,57 @@ public class FacturaService {
         return arcaReportes.completar(resultado).get(0);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<Long> buscarOperacion(UUID operacion) {
+        return facturaVentaRepository.findByOperacionGuardado(operacion).map(FacturaVenta::getId);
+    }
+
+    @Transactional(readOnly = true)
+    public FacturaEdicionDto obtenerDetalle(Long id) {
+        FacturaVenta factura = facturaVentaRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("No existe la factura con id " + id));
+        var cliente = factura.getCliente();
+        var items = factura.getDetalles().stream().sorted(Comparator.comparing(FacturaVentaDetalle::getId))
+                .map(detalle -> {
+                    var precio = detalle.getListaPrecioArticulo();
+                    var articulo = precio.getArticulo();
+                    var lista = precio.getListaPrecio();
+                    return new FacturaEdicionDto.Item(articulo.getId(), precio.getId(), articulo.getCodigo(),
+                            articulo.getDenominacion(), lista.getCodigo(), lista.getDenominacion(),
+                            detalle.getDescripcion(), detalle.getCantidad(), detalle.getPorcentajeBonificacion(),
+                            detalle.getPrecioUnitario());
+                }).toList();
+        return new FacturaEdicionDto(id, factura.getRevision(), factura.getTipoComprobante(),
+                factura.getPuntoVenta().getId(), cliente == null ? null : cliente.getId(),
+                cliente == null ? null : cliente.getDenominacion(), cliente == null ? null : cliente.getCuitCuil(),
+                factura.getCondicionIva().getId(), factura.getMoneda().getId(),
+                factura.getListaPrecio() == null ? null : factura.getListaPrecio().getId(),
+                Instant.ofEpochMilli(factura.getFechaEmision().getTime())
+                        .atZone(ZoneId.of("America/Argentina/Mendoza")).toLocalDate(),
+                factura.getObservaciones(), obtenerReporte(id).isPuedeModificar(), items);
+    }
+
+    private void asignarReceptor(FacturaVenta factura, FacturaRequestDto request) {
+        if (factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL) {
+            if (request.getClienteId() != null) {
+                throw new IllegalArgumentException("El comprobante interno se guarda sin cliente");
+            }
+            factura.setCliente(null);
+            factura.setCondicionIva(condicionIvaRepository.findFirstByCodigoAfipAndFechaBajaIsNullOrderById(5)
+                    .orElseThrow(() -> new IllegalArgumentException("Falta la condición IVA Consumidor Final")));
+            return;
+        }
+        if (request.getClienteId() == null || request.getCondicionIvaId() == null) {
+            throw new IllegalArgumentException("Seleccione un cliente y una condición de IVA");
+        }
+        var cliente = buscarPorId(clienteRepository, request.getClienteId(), "el cliente");
+        if (factura.getTipoComprobante() != null && cliente.getFechaBaja() != null) {
+            throw new IllegalArgumentException("El cliente seleccionado está dado de baja");
+        }
+        factura.setCliente(cliente);
+        factura.setCondicionIva(buscarPorId(condicionIvaRepository, request.getCondicionIvaId(), "la condición de IVA"));
+    }
+
     // ======================= ALTA =======================
 
     @Transactional
@@ -193,12 +256,17 @@ public class FacturaService {
         Date ahora = new Date();
 
         // 1. Buscar las entidades asociadas (si alguna no existe → 404)
-        PuntoVenta puntoVenta = buscarPorId(puntoVentaRepository, request.getPuntoVentaId(), "el punto de venta");
+        PuntoVenta puntoVenta = puntoVentaRepository.buscarBloqueado(request.getPuntoVentaId())
+                .orElseThrow(() -> new RecursoNoEncontradoException("No existe el punto de venta seleccionado"));
 
         FacturaVenta factura = new FacturaVenta();
         factura.setPuntoVenta(puntoVenta);
-        factura.setCliente(buscarPorId(clienteRepository, request.getClienteId(), "el cliente"));
-        factura.setCondicionIva(buscarPorId(condicionIvaRepository, request.getCondicionIvaId(), "la condición de IVA"));
+        factura.setTipoComprobante(request.getTipoComprobante());
+        factura.setOperacionGuardado(request.getOperacionGuardado());
+        asignarReceptor(factura, request);
+        if (request.getTipoComprobante() != null) {
+            factura.setListaPrecio(listas.activa(request.getListaPrecioId()));
+        }
         factura.setMoneda(buscarPorId(tipoMonedaRepository, request.getTipoMonedaId(), "la moneda"));
 
         // 2. Datos de cabecera
@@ -209,7 +277,7 @@ public class FacturaService {
 
         // 3. Ítems (addDetalle mantiene sincronizados los dos lados de la relación)
         for (FacturaDetalleRequestDto detalleRequest : request.getDetalles()) {
-            factura.addDetalle(crearDetalle(detalleRequest));
+            factura.addDetalle(crearDetalle(detalleRequest, factura.getListaPrecio()));
         }
 
         // 4. Importes calculados por el backend
@@ -251,15 +319,39 @@ public class FacturaService {
             throw new ReglaNegocioException("La factura " + id + " está anulada y no puede modificarse");
         }
 
+        boolean edicionCompleta = request.getTipoComprobante() != null;
+        if (edicionCompleta) {
+            if (!ESTADO_PENDIENTE.equals(factura.getEstado())) {
+                throw new ReglaNegocioException("Solo se pueden editar comprobantes pendientes o rechazados");
+            }
+            if (request.getEstado() != null || request.getDetalles() == null || request.getRevision() == null) {
+                throw new IllegalArgumentException("La edición requiere datos completos y su revisión");
+            }
+            if (!request.getRevision().equals(factura.getRevision())) {
+                throw new ReglaNegocioException("La factura cambió. Volvé a abrirla antes de guardar");
+            }
+            if (factura.getTipoComprobante() != null && factura.getTipoComprobante() != request.getTipoComprobante()) {
+                throw new ReglaNegocioException("El tipo de comprobante no puede cambiarse");
+            }
+            if (factura.getTipoComprobante() == null && request.getTipoComprobante() != TipoComprobante.FACTURA_C) {
+                throw new ReglaNegocioException("La factura anterior debe conservar su cliente");
+            }
+            factura.setTipoComprobante(request.getTipoComprobante());
+            asignarReceptor(factura, request);
+            factura.setListaPrecio(listas.activa(request.getListaPrecioId()));
+        }
         // Cabecera
         if (request.getPuntoVentaId() != null
                 && !request.getPuntoVentaId().equals(factura.getPuntoVenta().getId())) {
             throw new ReglaNegocioException("El punto de venta de una factura no puede cambiarse");
         }
-        if (request.getClienteId() != null) {
+        if (!edicionCompleta && request.getClienteId() != null) {
+            if (factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL)
+                throw new IllegalArgumentException("El comprobante interno se guarda sin cliente");
             factura.setCliente(buscarPorId(clienteRepository, request.getClienteId(), "el cliente"));
         }
-        if (request.getCondicionIvaId() != null) {
+        if (!edicionCompleta && request.getCondicionIvaId() != null
+                && factura.getTipoComprobante() != TipoComprobante.CONSUMIDOR_FINAL) {
             factura.setCondicionIva(buscarPorId(condicionIvaRepository, request.getCondicionIvaId(), "la condición de IVA"));
         }
         if (request.getTipoMonedaId() != null) {
@@ -279,7 +371,7 @@ public class FacturaService {
             }
             factura.getDetalles().clear(); // orphanRemoval borra los anteriores
             for (FacturaDetalleRequestDto detalleRequest : request.getDetalles()) {
-                factura.addDetalle(crearDetalle(detalleRequest));
+                factura.addDetalle(crearDetalle(detalleRequest, factura.getListaPrecio()));
             }
             recalcularImportes(factura);
             factura.setImporteSaldo(redondear(factura.getImporteTotal() - factura.getImporteCobrado()));
@@ -318,9 +410,11 @@ public class FacturaService {
 
     // ======================= AUXILIARES =======================
 
-    private FacturaVentaDetalle crearDetalle(FacturaDetalleRequestDto request) {
+    private FacturaVentaDetalle crearDetalle(FacturaDetalleRequestDto request, ListaPrecio lista) {
         ListaPrecioArticulo precio;
-        if (request.getListaPrecioArticuloId() != null) {
+        if (lista != null) {
+            precio = listas.precio(request.getArticuloId(), lista);
+        } else if (request.getListaPrecioArticuloId() != null) {
             precio = listaPrecioArticuloRepository.findById(request.getListaPrecioArticuloId())
                     .orElseThrow(() -> new RecursoNoEncontradoException(
                             "No existe la lista de precio del artículo con id " + request.getListaPrecioArticuloId()));

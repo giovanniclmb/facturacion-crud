@@ -31,15 +31,17 @@ public class ArcaReporteEnriquecedor {
                 boolean activo=ultimo!=null&&IntentoArca.ESTADOS_ACTIVOS.contains(ultimo.estado());
                 boolean anulada="ANULADA".equals(fila.getEstado());
                 boolean libre=!conCae&&!activo;
-                if(ultimo==null&&!conCae) fila.setMensajeArca(!props.isHabilitado() ? "ARCA está deshabilitada" :
+                boolean interno = fila.getTipoComprobante() == com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL;
+                fila.setPuedeImprimir(true);
+                if(!interno&&ultimo==null&&!conCae) fila.setMensajeArca(!props.isHabilitado() ? "ARCA está deshabilitada" :
                         (!props.getPuntosVentaExclusivos().contains(fila.getPuntoVentaNumero())
                                 ? "Configure un punto de venta exclusivo para autorizar" : ""));
-                fila.setPuedeAutorizar(props.isHabilitado()&&libre&&"PENDIENTE".equals(fila.getEstado())
+                fila.setPuedeAutorizar(!interno&&props.isHabilitado()&&libre&&"PENDIENTE".equals(fila.getEstado())
                         && fila.getPuntoVentaNumero()!=null && props.getPuntosVentaExclusivos().contains(fila.getPuntoVentaNumero()));
                 fila.setPuedeConsultar(ultimo!=null&&switch(ultimo.estado()) {
                     case PREPARANDO,ENVIANDO,INCIERTO -> true; default -> false;
                 });
-                fila.setPuedeModificar(libre&&!anulada);fila.setPuedeAnular(libre&&!anulada);
+                fila.setPuedeModificar(libre&&"PENDIENTE".equals(fila.getEstado()));fila.setPuedeAnular(libre&&!anulada);
                 fila.setPuedeEliminar(libre&&ultimo==null);
             }
         }

@@ -33,8 +33,12 @@ public class AlmacenIntentosArca {
   this.factory=new SnapshotFiscalFactory(reloj);
  }
  public Reserva reservar(long facturaId,Serie serie,Set<Integer> iva,boolean confirmar) {
+  return reservar(facturaId, serie, iva, confirmar, null);
+ }
+ public Reserva reservar(long facturaId,Serie serie,Set<Integer> iva,boolean confirmar,Long revision) {
   SerieArca s=crearYBloquear(serie);
   FacturaVenta f=facturaBloqueada(facturaId);
+  if (revision != null && !revision.equals(f.getRevision())) throw conflicto("La factura cambió antes del envío");
   var anterior=ultimo(facturaId);
   if(anterior.isPresent() && IntentoArca.ESTADOS_ACTIVOS.contains(anterior.get().estado)) {
    var i=anterior.get();return new Reserva(i.id,i.propietario,false);
@@ -69,7 +73,16 @@ public class AlmacenIntentosArca {
   if(i.estado==AUTORIZADO||i.estado==RECHAZADO) return;
   if((i.estado!=ENVIANDO&&i.estado!=INCIERTO)||!i.id.equals(i.serie.intentoActivo)) throw conflicto("El intento no fue enviado o perdió su reserva");
   if(resultado.aceptado()) autorizar(i,resultado.cae(),resultado.vencimiento());
-  else {i.estado=RECHAZADO;i.factura.setResultadoAfip("R");i.factura.setMotivoRechazo(resultado.errores().stream().map(e->sanear(e.mensaje())).collect(java.util.stream.Collectors.joining("; ")));liberar(i);}
+  else {
+   i.estado=RECHAZADO;
+   i.factura.setResultadoAfip("R");
+   String motivo=java.util.stream.Stream.concat(resultado.errores().stream(), resultado.observaciones().stream())
+           .map(e->sanear(e.mensaje())).filter(m->!m.isBlank()).collect(java.util.stream.Collectors.joining("; "));
+   if (motivo.isBlank()) motivo="ARCA rechazó la solicitud de CAE";
+   int longitud=Math.min(255, motivo.codePointCount(0, motivo.length()));
+   i.factura.setMotivoRechazo(motivo.substring(0, motivo.offsetByCodePoints(0, longitud)));
+   liberar(i);
+  }
   auditar(i.factura);
   i.errores=codificar(resultado.errores());i.observaciones=codificar(resultado.observaciones());tocar(i);
  }
@@ -100,11 +113,21 @@ public class AlmacenIntentosArca {
   boolean anulada="ANULADA".equals(f.getEstado());
   boolean consultar=i!=null&&(i.estado==PREPARANDO||i.estado==ENVIANDO||i.estado==INCIERTO);
   LocalDate vencimiento=i==null?(f.getCaeFechaVencimiento()==null?null:Instant.ofEpochMilli(f.getCaeFechaVencimiento().getTime()).atZone(ZoneId.of("America/Argentina/Buenos_Aires")).toLocalDate()):i.vencimiento;
+  boolean interno=f.getTipoComprobante()==com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL;
+  String mensaje;
+  if (interno) mensaje="No aplica. Es un comprobante interno.";
+  else if (i!=null) mensaje=i.estado.name();
+  else if (tieneCae(f)) mensaje="CAE histórico sin verificar";
+  else if (anulada) mensaje="Comprobante anulado";
+  else if (!props.isHabilitado()) mensaje="ARCA está deshabilitada";
+  else if (!props.getPuntosVentaExclusivos().contains(f.getPuntoVenta().getNumero()))
+   mensaje="Configure un punto de venta exclusivo para autorizar";
+  else mensaje="Pendiente de autorización";
   return new FacturaArcaDto(facturaId,f.getNumero(),i==null?null:i.id,i==null?null:i.estado,
    i==null?f.getNumeroFiscal():i.numero,i==null?f.getPuntoVenta().getNumero():i.serie.getPuntoVenta(),
    i==null?11:i.serie.getTipo(),i==null?f.getAmbienteFiscal():i.serie.getAmbiente(),f.getCae(),vencimiento,
-   i==null?(props.getPuntosVentaExclusivos().contains(f.getPuntoVenta().getNumero())?"Sin informar":"Configure un punto de venta exclusivo para autorizar"):i.estado.name(),i==null?List.of():decodificar(i.errores),i==null?List.of():decodificar(i.observaciones),
-   props.isHabilitado()&&props.getPuntosVentaExclusivos().contains(f.getPuntoVenta().getNumero())&&!bloqueada&&"PENDIENTE".equals(f.getEstado()),consultar,!bloqueada&&!anulada,!bloqueada&&!anulada,!bloqueada&&i==null);
+   mensaje,i==null?List.of():decodificar(i.errores),i==null?List.of():decodificar(i.observaciones),
+   !interno&&props.isHabilitado()&&props.getPuntosVentaExclusivos().contains(f.getPuntoVenta().getNumero())&&!bloqueada&&"PENDIENTE".equals(f.getEstado()),consultar,!bloqueada&&"PENDIENTE".equals(f.getEstado()),!bloqueada&&!anulada,!bloqueada&&i==null);
  }
  private SerieArca crearYBloquear(Serie s) {
   boolean pg=em.unwrap(org.hibernate.Session.class).doReturningWork(c->c.getMetaData().getDatabaseProductName().equals("PostgreSQL"));

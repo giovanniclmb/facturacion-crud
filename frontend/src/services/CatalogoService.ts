@@ -30,7 +30,15 @@ export class CatalogoService {
         return pedir(`${this.baseUrl}/clientes/explorer${construirQueryString({busqueda, pagina, tamanio: 10})}`);
     }
 
-    buscarListasPrecioArticulos(busqueda = '', pagina = 0): Promise<PaginaDTO<ListaPrecioArticuloExplorerDTO>> {
-        return pedir(`${this.baseUrl}/listas-precio-articulos/explorer${construirQueryString({busqueda, pagina, tamanio: 10})}`);
+    obtenerListasPrecio(): Promise<OpcionDTO[]> {
+        return pedir(`${this.baseUrl}/listas-precio`);
+    }
+
+    cotizar(articuloId: number, listaPrecioId: number): Promise<ListaPrecioArticuloExplorerDTO> {
+        return pedir(`${this.baseUrl}/listas-precio-articulos/precio${construirQueryString({articuloId, listaPrecioId})}`);
+    }
+
+    buscarListasPrecioArticulos(busqueda = '', pagina = 0, listaPrecioId?: number): Promise<PaginaDTO<ListaPrecioArticuloExplorerDTO>> {
+        return pedir(`${this.baseUrl}/listas-precio-articulos/explorer${construirQueryString({busqueda, pagina, tamanio: 10, listaPrecioId})}`);
     }
 }

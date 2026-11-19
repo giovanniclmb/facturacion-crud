@@ -39,10 +39,16 @@ public class FacturaRestController {
     private final FacturaService facturaService;
     private final FacturaPdfExporter pdfExporter;
     private final FacturaExcelExporter excelExporter;
+    private final com.tp.facturacion.service.GuardarFacturaService guardado;
+    private final com.tp.facturacion.reporte.ComprobantePdfExporter comprobantes;
 
     public FacturaRestController(FacturaService facturaService,
                                  FacturaPdfExporter pdfExporter,
-                                 FacturaExcelExporter excelExporter) {
+                                 FacturaExcelExporter excelExporter,
+                                 com.tp.facturacion.service.GuardarFacturaService guardado,
+                                 com.tp.facturacion.reporte.ComprobantePdfExporter comprobantes) {
+        this.guardado = guardado;
+        this.comprobantes = comprobantes;
         this.facturaService = facturaService;
         this.pdfExporter = pdfExporter;
         this.excelExporter = excelExporter;
@@ -75,12 +81,26 @@ public class FacturaRestController {
         return facturaService.obtenerReporte(id);
 }
 
+    @GetMapping("/{id:\\d+}/detalle")
+    public com.tp.facturacion.dto.FacturaEdicionDto detalle(@PathVariable Long id) {
+        return facturaService.obtenerDetalle(id);
+    }
+
+    @GetMapping("/{id:\\d+}/comprobante")
+    public ResponseEntity<byte[]> comprobante(@PathVariable Long id) {
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.inline().filename("comprobante-" + id + ".pdf").build().toString())
+                .body(comprobantes.exportar(id));
+    }
+
     // POST /api/facturas → crea una factura y responde 201 Created
     @PostMapping
     public ResponseEntity<FacturaReporteDto> crear(
         @Validated(FacturaRequestDto.Alta.class) @RequestBody FacturaRequestDto request) {
 
-    FacturaReporteDto creada = facturaService.crear(request);
+    FacturaReporteDto creada = guardado.crear(request);
     return ResponseEntity
             .created(URI.create("/api/facturas/" + creada.getId()))
             .body(creada);
@@ -90,7 +110,7 @@ public class FacturaRestController {
     @PutMapping("/{id:\\d+}")
     public FacturaReporteDto actualizar(@PathVariable Long id,
                                     @Validated @RequestBody FacturaRequestDto request) {
-        return facturaService.actualizar(id, request);
+        return guardado.actualizar(id, request);
 }
 
 // DELETE /api/facturas/{id} → borrado físico (solo sin CAE). Responde 204 No Content

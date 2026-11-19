@@ -17,8 +17,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class CatalogoExplorerController {
     private final CatalogoExplorerService service;
 
-    public CatalogoExplorerController(CatalogoExplorerService service) {
+    private final com.tp.facturacion.service.ListasFacturaService listas;
+
+    public CatalogoExplorerController(CatalogoExplorerService service,
+                                     com.tp.facturacion.service.ListasFacturaService listas) {
+        this.listas = listas;
         this.service = service;
+    }
+
+    @GetMapping("/listas-precio")
+    public java.util.List<com.tp.facturacion.dto.OpcionDto> listasPrecio() {
+        return listas.activas();
+    }
+
+    @GetMapping("/listas-precio-articulos/precio")
+    public ListaPrecioArticuloExplorerDto precio(@RequestParam Long articuloId, @RequestParam Long listaPrecioId) {
+        return listas.cotizar(articuloId, listaPrecioId);
     }
 
     @GetMapping("/clientes/explorer")
@@ -30,7 +44,7 @@ public class CatalogoExplorerController {
     @GetMapping("/listas-precio-articulos/explorer")
     public PaginaDto<ListaPrecioArticuloExplorerDto> listasPrecioArticulos(
             @RequestParam(defaultValue = "") String busqueda,
-            @Valid @ModelAttribute PaginacionDto paginacion) {
-        return service.listasPrecioArticulos(busqueda, paginacion);
+            @Valid @ModelAttribute PaginacionDto paginacion, @RequestParam(required = false) Long listaPrecioId) {
+        return service.listasPrecioArticulos(busqueda, paginacion, listaPrecioId);
     }
 }

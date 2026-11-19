@@ -1,12 +1,16 @@
 // Espejo de los DTOs de Spring Boot: mismos nombres de campos, mismos tipos.
 
 /** Estados posibles de una factura (en Java es un String; acá lo restringimos). */
+export type TipoComprobante = 'FACTURA_C' | 'CONSUMIDOR_FINAL';
+
 export type EstadoFactura = 'PENDIENTE' | 'EMITIDA' | 'ANULADA';
 
 /** Espejo de FacturaReporteDto (lo que devuelve GET, POST y PUT). */
 export interface FacturaReporteDTO {
     id: number;
     numeroFactura: number | null;
+    tipoComprobante?: TipoComprobante | null;
+    puedeImprimir?: boolean;
     fechaEmision: string;            // "yyyy-MM-dd" (por el @JsonFormat de Java)
     clienteDenominacion: string;
     condicionIva: string;
@@ -43,7 +47,34 @@ export interface FacturaDetalleRequestDTO {
  * Todo es opcional porque el PUT acepta cambios parciales;
  * el backend exige cabecera e ítems solo en el alta.
  */
+export interface FacturaEdicionDTO {
+    id: number;
+    revision: number;
+    tipoComprobante: TipoComprobante | null;
+    puntoVentaId: number;
+    clienteId: number | null;
+    clienteDenominacion: string | null;
+    clienteCuit: string | null;
+    condicionIvaId: number;
+    tipoMonedaId: number;
+    listaPrecioId: number | null;
+    fechaEmision: string;
+    observaciones: string | null;
+    puedeModificar: boolean;
+    detalles: (Omit<ListaPrecioArticuloExplorerDTO, 'id'> & {
+        listaPrecioArticuloId: number;
+        descripcion: string | null;
+        cantidad: number;
+        porcentajeBonificacion: number;
+    })[];
+}
+
 export interface FacturaRequestDTO {
+    tipoComprobante?: TipoComprobante;
+    listaPrecioId?: number;
+    revision?: number;
+    operacionGuardado?: string;
+    confirmarCuitReceptor?: boolean;
     puntoVentaId?: number;
     clienteId?: number;
     condicionIvaId?: number;
@@ -56,6 +87,7 @@ export interface FacturaRequestDTO {
 
 /** Espejo de FacturaFiltroDto (parámetros de GET /api/facturas). */
 export interface FacturaFiltrosDTO {
+    ordenFecha?: 'ASC' | 'DESC';
     numeroFactura?: number;
     clienteId?: number;
     sinInformarArca?: boolean;

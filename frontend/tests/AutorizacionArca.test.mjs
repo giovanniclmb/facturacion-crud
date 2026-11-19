@@ -75,7 +75,7 @@ test('consulta un incierto recargado y muestra autorización fiscal separada del
         ui.document.querySelector('.btn-consultar-arca').click();
         await flush();
         const texto = ui.document.querySelector('.estado-factura').textContent;
-        assert.match(texto, /PENDIENTE/);
+        assert.match(texto, /Autorizada/);
         assert.match(texto, /AUTORIZADO/);
         assert.match(texto, /12345678901234/);
         assert.match(texto, /2026-11-13/);
@@ -164,7 +164,7 @@ test('un rechazo con historial permite anular, distingue bloqueo de borrado y re
         assert.match(ui.document.querySelector('.arca-estado').textContent, /Historial fiscal: borrado bloqueado/);
         const ver = ui.document.querySelector('.btn-recargar-arca');
         assert.equal(ver.hidden, false);
-        assert.match(ver.textContent, /Ver estado ARCA/);
+        assert.match(ver.textContent, /Estado de ARCA/);
         ver.click();
         await flush();
         assert.match(ui.document.querySelector('.arca-estado').textContent, /CUIT receptor rechazado/);

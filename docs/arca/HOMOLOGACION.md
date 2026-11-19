@@ -2,7 +2,7 @@
 
 El proyecto incluye autenticación WSAA, consultas WSFEv1, autorización de Factura C y
 recuperación de resultados inciertos, solo en homologación. Arranca con ARCA deshabilitada
-por defecto. La autorización es una acción explícita sobre una factura guardada.
+por defecto. El flujo explícito de guardado de Factura C solicita el CAE después de confirmar la operación local.
 
 ## Preparación en WSASS
 
@@ -210,3 +210,28 @@ con pruebas PostgreSQL habilitadas y sin omisiones. El informe general de arquit
 y cumplimiento se entrega fuera del repositorio, en Integrador/docs, por pedido del usuario.
 La guía se sigue con receptor CUIT (DocTipo80) según el alcance aprobado; el ejemplo
 conceptual DocTipo99/0 no se implementa como fallback para documentos inválidos.
+
+
+## Emisión de demostración y verificación remota
+
+El 18/11/2026 se emitió desde la interfaz la Factura C de homologación
+**99001-00000001**, ID local **73** en la base separada
+`facturacion_demo_correcciones_20261118`. Se usaron pesos y un cliente de demostración
+cargado con un CUIT de ejemplo del manual de ARCA. El catálogo de puntos había devuelto
+602, pero el punto aceptó la solicitud. Una llamada posterior a `FECompConsultar` confirmó
+el mismo número, receptor, total, CAE y vencimiento del intento persistido. El QR se leyó
+del PDF A4 generado y se contrastó con ese registro. La factura de prueba permanece en
+la copia local.
+
+Para repetir únicamente la consulta del comprobante, configurar el datasource de la
+copia y el ID local ya autorizado. Esta prueba no solicita otro CAE:
+
+```sh
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/facturacion_demo_correcciones_20261118 \
+ARCA_VERIFICAR_FACTURA_ID=73 \
+./mvnw -Dtest=ConsultaHomologacionManualTests test
+```
+
+El guardado explícito de Factura C reemplaza el paso manual para las nuevas altas o para
+una edición elegible. La acción de consulta sigue disponible para resultados inciertos.
+El botón manual histórico y los contratos REST previos se mantienen para sus consumidores.

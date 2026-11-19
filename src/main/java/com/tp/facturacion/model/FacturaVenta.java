@@ -27,6 +27,21 @@ public class FacturaVenta extends AuditoriaApp {
 
     private Long numero;
 
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "tipo_comprobante", length = 32)
+    private TipoComprobante tipoComprobante;
+
+    @ManyToOne
+    @JoinColumn(name = "lista_precio_id")
+    private ListaPrecio listaPrecio;
+
+    @Column(name = "operacion_guardado", unique = true)
+    private java.util.UUID operacionGuardado;
+
+    @jakarta.persistence.Version
+    @Column(name = "revision", nullable = false, columnDefinition = "bigint default 0")
+    private Long revision;
+
     @Column(nullable = false)
     @Temporal(TemporalType.TIMESTAMP)
     private Date fechaEmision;
@@ -72,7 +87,7 @@ public class FacturaVenta extends AuditoriaApp {
     private List<FacturaVentaDetalle> detalles = new ArrayList<>();
 
     @ManyToOne
-    @JoinColumn(name = "cliente_id", nullable = false)
+    @JoinColumn(name = "cliente_id")
     private Cliente cliente;
 
     @ManyToOne

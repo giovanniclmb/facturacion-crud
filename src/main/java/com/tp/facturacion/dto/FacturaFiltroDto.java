@@ -29,4 +29,7 @@ public class FacturaFiltroDto {
     private Long clienteId;
 
     private Boolean sinInformarArca;
+    private OrdenFecha ordenFecha = OrdenFecha.DESC;
+
+    public enum OrdenFecha { ASC, DESC }
 }
