@@ -24,6 +24,25 @@ class MigracionArcaPostgresTests extends PostgresArcaFixture {
            "UPDATE factura_venta SET cae='12345678901234' WHERE id=1"));
   }
  }
+ @Test void cargaClientesDeDemoSinDuplicarlosNiModificarFacturas() throws Exception {
+  try (Connection c=abrir(); Statement sql=c.createStatement()) {
+   for (String tabla : java.util.List.of("cliente", "contacto", "domicilio")) {
+    sql.execute("ALTER TABLE " + tabla + " ALTER COLUMN id RESTART WITH 100");
+   }
+   String carga = java.nio.file.Files.readString(java.nio.file.Path.of("db/demo/clientes_arca.sql"));
+   sql.execute(carga);
+   sql.execute(carga);
+   assertEquals(2,count(c,"""
+     SELECT count(*) FROM cliente WHERE cuitcuil = '30000000007' AND fechabaja IS NULL
+       AND denominacion IN ('Cliente demostración ARCA', 'Giovanni Colombo (demo)')
+     """));
+   assertEquals(3,count(c,"SELECT count(*) FROM cliente"));
+   assertEquals(3,count(c,"SELECT count(*) FROM contacto"));
+   assertEquals(3,count(c,"SELECT count(*) FROM domicilio"));
+   assertEquals(2,count(c,"SELECT count(*) FROM factura_venta"));
+   assertEquals(0,count(c,"SELECT count(*) FROM arca_intento"));
+  }
+ }
  @Test void restriccionesActivasYRechazosHistoricos() throws Exception {
   try(Connection c=abrir()) {
    long serie=serie(c);insertarIntento(c,1,serie,"RECHAZADO",1L);insertarIntento(c,1,serie,"RECHAZADO",1L);

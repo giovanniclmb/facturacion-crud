@@ -36,6 +36,14 @@ En una base existente, aplicar después de la migración ARCA:
 psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/migrations/002_correcciones_facturacion.sql
 ```
 
+Para cargar los dos clientes de demostración después de preparar la base local:
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/demo/clientes_arca.sql
+```
+
+La carga puede repetirse. Para emitir desde otro equipo, seguir la [preparación de la demo](docs/arca/HOMOLOGACION.md#preparar-la-demo-en-otro-equipo).
+
 El PDF usa `facturacion.emisor-denominacion` y `facturacion.emisor-domicilio` de la configuración local si están definidos. Para homologación, el CUIT fiscal y los datos del QR provienen del intento autorizado.
 
 ## Arquitectura

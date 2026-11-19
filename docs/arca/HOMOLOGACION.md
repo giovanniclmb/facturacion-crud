@@ -212,6 +212,21 @@ La guía se sigue con receptor CUIT (DocTipo80) según el alcance aprobado; el e
 conceptual DocTipo99/0 no se implementa como fallback para documentos inválidos.
 
 
+## Preparar la demo en otro equipo
+
+1. Preparar la base local del integrador con los catálogos y el usuario de sistema de ID `1`. Aplicar las migraciones de esquema según [las instrucciones del repositorio](../../README.md).
+2. Desde la raíz del proyecto, cargar los receptores y los precios de ejemplo:
+
+   ```sh
+   psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/demo/clientes_arca.sql
+   psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/demo/precios_mayorista.sql
+   ```
+
+3. Configurar en ese equipo la conexión WSASS de homologación con su certificado, clave y autorización. Cargar en `punto_venta` el número fiscal habilitado y declararlo en `arca.puntos-venta-exclusivos` si queda reservado a esta aplicación. El `99001` se usó con el emisor de la demostración original.
+4. En **Nueva factura**, seleccionar **Factura C**, el punto configurado, **Pesos**, **Responsable Inscripto** y uno de los clientes **Cliente demostración ARCA** o **Giovanni Colombo (demo)**. Ambos registros locales representan al mismo receptor de ejemplo `30000000007`, tomado del [manual de WSFEv1](https://www.arca.gob.ar/ws/documentacion/manuales/manual-desarrollador-ARCA-COMPG.pdf). Agregar un artículo, confirmar el CUIT y pulsar **Guardar y solicitar CAE**.
+
+La carga de clientes conserva los registros existentes. Si encuentra alguno de los dos nombres con un documento diferente o dado de baja, revierte la transacción e informa cuál debe revisarse. Los comprobantes y CAE se generan al realizar la prueba desde ese equipo.
+
 ## Emisión de demostración y verificación remota
 
 El 18/11/2026 se emitió desde la interfaz la Factura C de homologación
