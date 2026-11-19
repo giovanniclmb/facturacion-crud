@@ -23,6 +23,7 @@ import { permisosFactura } from './models/permisosFactura.js';
 
 const facturaService = new FacturaService();
 const catalogoService = new CatalogoService();
+const NOMBRE_FACTURA_CONSUMIDOR_FINAL = 'Factura B - Consumidor Final';
 
 /** Un renglón del formulario de alta (lo que el usuario está cargando). */
 interface ItemFormulario {
@@ -448,7 +449,7 @@ function sincronizarTipo(): void {
     for (const id of ['alta-campo-cliente', 'alta-campo-iva', 'alta-campo-confirmacion']) {
         elemento(id).hidden = esInterno();
     }
-    btnCrear.textContent = esInterno() ? 'Guardar comprobante interno' : 'Guardar y solicitar CAE';
+    btnCrear.textContent = esInterno() ? 'Guardar Factura B' : 'Guardar y solicitar CAE';
 }
 
 async function recotizarItems(): Promise<void> {
@@ -512,7 +513,7 @@ async function editarFactura(factura: FacturaReporteDTO): Promise<void> {
         }));
         if (items.length === 0) agregarItem();
         else renderizarItems();
-        tituloFormulario.textContent = `Editar ${esInterno() ? 'comprobante interno' : 'Factura C'} · N.º local ${factura.numeroFactura}`;
+        tituloFormulario.textContent = `Editar ${esInterno() ? NOMBRE_FACTURA_CONSUMIDOR_FINAL : 'Factura C'} · N.º local ${factura.numeroFactura}`;
         btnCancelarEdicion.hidden = false;
         if (factura.estadoFiscal === 'RECHAZADO') {
             altaRechazo.textContent = factura.mensajeArca || 'Solicitud rechazada por ARCA.';
@@ -666,7 +667,7 @@ function crearFilaFactura(f: FacturaReporteDTO): HTMLTableRowElement {
     const interno = f.tipoComprobante === 'CONSUMIDOR_FINAL';
     const etiquetaNumero = f.estadoFiscal === 'AUTORIZADO' && f.cae && f.puntoVentaFiscal != null && f.numeroFiscal != null
         ? `Factura C ${String(f.puntoVentaFiscal).padStart(5, '0')}-${String(f.numeroFiscal).padStart(8, '0')}`
-        : `${interno ? 'Comprobante interno' : 'Factura C'} · N° local ${f.numeroFactura ?? '—'}`;
+        : `${interno ? NOMBRE_FACTURA_CONSUMIDOR_FINAL : 'Factura C'} · N° local ${f.numeroFactura ?? '—'}`;
     numero.append(crearElemento('strong', '', etiquetaNumero));
     comprobante.append(numero, crearElemento('div', 'fila-secundaria',
         `${formatearFecha(f.fechaEmision)} · ${f.puntoVentaDescripcion}`));

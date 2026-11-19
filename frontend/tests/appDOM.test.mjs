@@ -196,5 +196,8 @@ test('los comprobantes existentes e internos ofrecen PDF y estado de ARCA', asyn
         assert.equal(fila.querySelector('.btn-recargar-arca').hidden, false);
         assert.equal(fila.querySelector('.btn-recargar-arca').textContent, 'Estado de ARCA');
     }
+    assert.match(porId(app, 'facturas-tbody').rows[1].textContent, /Factura B - Consumidor Final/);
+    assert.equal(porId(app, 'alta-tipo').querySelector('[value="CONSUMIDOR_FINAL"]').textContent,
+        'Factura B - Consumidor Final');
     assert.match(porId(app, 'facturas-tbody').rows[1].textContent, /No aplica/);
 });

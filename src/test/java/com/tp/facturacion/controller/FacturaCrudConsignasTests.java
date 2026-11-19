@@ -94,9 +94,15 @@ class FacturaCrudConsignasTests {
         mvc.perform(get("/api/facturas/100/detalle"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.listaPrecioId").value(2))
                 .andExpect(jsonPath("$.detalles[1].listaPrecioArticuloId").value(2));
-        mvc.perform(get("/api/facturas/100/comprobante")).andExpect(status().isOk())
+        byte[] pdf = mvc.perform(get("/api/facturas/100/comprobante")).andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_PDF))
-                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline")));
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline")))
+                .andReturn().getResponse().getContentAsByteArray();
+        try (var lector = new org.openpdf.text.pdf.PdfReader(pdf)) {
+            String texto = new org.openpdf.text.pdf.parser.PdfTextExtractor(lector).getTextFromPage(1);
+            assertTrue(texto.contains("Factura B - Consumidor Final"));
+            assertTrue(texto.contains("sin validez fiscal"));
+        }
     }
 
     @Test

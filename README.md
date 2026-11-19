@@ -26,7 +26,7 @@ punto de venta exclusivo configurado. Los comprobantes internos se guardan por s
 ## Alta, edición e impresión
 
 - **Factura C** exige un cliente del padrón y confirmación del CUIT. El guardado solicita CAE en homologación. Un rechazo conserva la factura editable y el motivo. Si el resultado es incierto, usar **Consultar ARCA** desde la grilla.
-- **Consumidor final** genera un comprobante interno sin cliente ni CAE. Las facturas pendientes o rechazadas se pueden editar. El punto de venta permanece fijo y se recalculan los ítems a precio vigente.
+- **Factura B - Consumidor Final** genera un comprobante interno sin cliente ni CAE. Las facturas pendientes o rechazadas se pueden editar. El punto de venta permanece fijo y se recalculan los ítems a precio vigente.
 - La lista **General** se selecciona inicialmente. Si falta un precio en la lista elegida, se muestra el de General con su origen. Para cargar ejemplos Mayorista en una base de demostración, usar [precios_mayorista.sql](db/demo/precios_mayorista.sql).
 - **Comprobantes registrados** ordena por fecha de emisión descendente. El selector, el desempate por ID y el orden se aplican también a PDF y Excel. **Ver comprobante** abre el PDF individual en todas las filas. Cuando la autorización no está confirmada, el PDF se identifica como copia sin validez fiscal. **Estado de ARCA** muestra el último estado registrado de cada comprobante.
 

@@ -70,7 +70,7 @@ public class ComprobantePdfExporter {
             String numero = fiscal == null ? "N.º local " + (factura.getNumero() == null ? id : factura.getNumero())
                     : String.format(Locale.ROOT,
                     "%05d-%08d", fiscal.getSerie().getPuntoVenta(), fiscal.getNumero());
-            pdf.add(new Paragraph((interno ? "Comprobante interno" : "Factura C") + " · " + numero,
+            pdf.add(new Paragraph((interno ? "Factura B - Consumidor Final" : "Factura C") + " · " + numero,
                     FontFactory.getFont(FontFactory.HELVETICA_BOLD, 17)));
             if (fiscal != null) {
                 pdf.add(new Paragraph("Homologación · comprobante de prueba"));
