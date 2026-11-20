@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edición de comprobante</title>
+<link rel="stylesheet" href="../../../design-system/tokens.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--tinta); font: var(--texto) var(--fuente); }
+  header { background: var(--panel); border-bottom: 1px solid var(--borde); padding: 1rem max(1rem, calc((100% - var(--ancho)) / 2)); font-weight: 700; }
+  main { max-width: var(--ancho); padding: 1rem; margin: auto; }
+  article { border: 1px solid var(--borde); border-radius: var(--radio-panel); background: var(--panel); overflow: hidden; }
+  h1 { background: var(--suave); border-bottom: 1px solid var(--borde); padding: .9rem 1rem; margin: 0; font-size: 1.1rem; }
+  form { padding: 1rem; }
+  .campos { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  label { display: block; font-weight: 600; }
+  select, input:not([type=checkbox]), button { font: inherit; min-height: var(--alto-control); border: 1px solid var(--borde-control); border-radius: var(--radio-control); padding: .45rem .65rem; background: var(--panel); color: inherit; }
+  select, input:not([type=checkbox]) { display: block; width: 100%; margin-top: .35rem; }
+  select:disabled { background: var(--suave); }
+  small { display: block; margin-top: .35rem; color: var(--secundario); }
+  .grupo-cliente { display: flex; gap: .35rem; margin-top: .35rem; }
+  .grupo-cliente input { flex: 1; min-width: 0; margin-top: 0; }
+  .grupo-cliente button { border-color: var(--accion); color: var(--accion); }
+  .importe { display: flex; justify-content: space-between; background: var(--suave); border: 1px solid var(--borde); gap: 1rem; margin: 1rem 0; padding: .75rem; }
+  .grilla { padding: 1rem; }
+  .fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; }
+  .estado { margin: .3rem 0 0; color: var(--secundario); }
+  .confirmacion { font-weight: 400; }
+  footer { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+  .primario { background: var(--accion); border-color: var(--accion); color: white; }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: var(--foco); outline-offset: 2px; }
+  @media (max-width: 950px) { .campos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 540px) { .campos { grid-template-columns: 1fr; gap: .75rem; } }
+</style>
+</head>
+<body>
+<header data-brand-name>Facturación de ventas</header>
+<main>
+  <article id="editor">
+    <h1>Editar comprobante · N.º local 2</h1>
+    <form>
+      <div class="campos">
+        <label>Tipo de comprobante
+          <select id="tipo">
+            <option value="B">Factura B - Consumidor Final</option>
+            <option value="C">Factura C</option>
+          </select>
+        </label>
+        <label>Punto de venta
+          <select id="punto">
+            <option value="local">Mostrador de prueba</option>
+            <option value="fiscal">99001 · Homologación</option>
+          </select>
+          <small data-fiscal>Seleccioná un punto habilitado para homologación.</small>
+        </label>
+        <div data-fiscal>
+          <label for="cliente">Cliente (obligatorio)</label>
+          <span class="grupo-cliente">
+            <input id="cliente" readonly value="Cliente demo ARCA" aria-label="Cliente seleccionado">
+            <button id="buscar" type="button">Buscar</button>
+          </span>
+        </div>
+        <label data-fiscal>Condición de IVA
+          <select><option>Responsable Inscripto</option><option>Consumidor Final</option></select>
+        </label>
+        <label>Moneda <select><option>Pesos argentinos</option></select></label>
+        <label>Fecha de emisión <input type="date" value="2026-11-20"></label>
+        <label>Lista de precios <select><option>Lista general 2026</option><option>Mayorista</option><option>Costo</option></select></label>
+      </div>
+      <p class="importe"><span>Cable HDMI genérico × 1</span><strong>$ 3.000,00</strong></p>
+      <footer><button id="guardar" type="button" class="primario"></button><button type="button" id="cancelar">Cancelar edición</button></footer>
+    </form>
+  </article>
+  <article id="comprobantes" hidden>
+    <h1>Comprobantes registrados</h1>
+    <div class="grilla">
+      <div class="fila">
+        <div>
+          <strong>Factura C · N.º local 2</strong>
+          <p class="estado" id="estado" role="status">Pendiente de autorización · Sin CAE</p>
+        </div>
+        <button id="editar" type="button">Editar</button>
+      </div>
+      <p>Cliente demo ARCA · $ 3.000,00</p>
+      <label class="confirmacion"><input type="checkbox" id="confirmar"> Confirmo el CUIT del receptor para solicitar CAE en homologación.</label>
+      <footer><button id="informar" type="button" class="primario" disabled>Informar a ARCA</button></footer>
+    </div>
+  </article>
+</main>
+<script src="../../../design-system/brand.js"></script>
+<script>
+const tipo = document.getElementById('tipo');
+const punto = document.getElementById('punto');
+const confirmar = document.getElementById('confirmar');
+const guardar = document.getElementById('guardar');
+const editor = document.getElementById('editor');
+const comprobantes = document.getElementById('comprobantes');
+const informar = document.getElementById('informar');
+const vista = new URLSearchParams(location.search).get('origen');
+let tipoInicial = vista === 'B' ? 'B' : 'C';
+let solicitudRegistrada = false;
+function actualizar() {
+  const fiscal = tipo.value === 'C';
+  document.querySelectorAll('[data-fiscal]').forEach(el => el.hidden = !fiscal);
+  punto.disabled = !(tipoInicial === 'B' && fiscal);
+  punto.value = fiscal || tipoInicial === 'C' ? 'fiscal' : 'local';
+  document.querySelector('small').hidden = punto.disabled;
+  tipo.disabled = solicitudRegistrada;
+  guardar.textContent = fiscal ? 'Guardar Factura C' : 'Guardar Factura B';
+}
+function abrirComprobantes() {
+  editor.hidden = true;
+  comprobantes.hidden = false;
+}
+tipo.value = vista === 'B' || vista === 'guardada' ? 'C' : 'B';
+tipo.addEventListener('change', actualizar);
+document.getElementById('buscar').addEventListener('click', () => {
+  document.getElementById('cliente').value = 'Giovanni Colombo (demo)';
+});
+document.getElementById('cancelar').addEventListener('click', () => {
+  tipo.value = tipoInicial;
+  actualizar();
+});
+guardar.addEventListener('click', () => {
+  tipoInicial = tipo.value;
+  if (tipoInicial === 'C') abrirComprobantes();
+});
+confirmar.addEventListener('change', () => informar.disabled = !confirmar.checked);
+informar.addEventListener('click', () => {
+  solicitudRegistrada = true;
+  document.getElementById('estado').textContent = 'Solicitud rechazada (simulación)';
+  confirmar.checked = false;
+  informar.disabled = true;
+});
+document.getElementById('editar').addEventListener('click', () => {
+  comprobantes.hidden = true;
+  editor.hidden = false;
+  tipo.value = 'C';
+  actualizar();
+});
+actualizar();
+if (vista === 'guardada') abrirComprobantes();
+</script>
+</body>
+</html>

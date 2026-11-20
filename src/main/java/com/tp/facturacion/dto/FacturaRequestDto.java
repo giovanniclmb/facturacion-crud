@@ -31,7 +31,6 @@ public class FacturaRequestDto {
     private Long listaPrecioId;
     private Long revision;
     private java.util.UUID operacionGuardado;
-    private boolean confirmarCuitReceptor;
 
     @NotNull(groups = Alta.class)
     private Long tipoMonedaId;

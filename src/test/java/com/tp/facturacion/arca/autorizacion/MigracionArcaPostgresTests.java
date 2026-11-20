@@ -32,13 +32,13 @@ class MigracionArcaPostgresTests extends PostgresArcaFixture {
    String carga = java.nio.file.Files.readString(java.nio.file.Path.of("db/demo/clientes_arca.sql"));
    sql.execute(carga);
    sql.execute(carga);
-   assertEquals(2,count(c,"""
+   assertEquals(5,count(c,"""
      SELECT count(*) FROM cliente WHERE cuitcuil = '30000000007' AND fechabaja IS NULL
-       AND denominacion IN ('Cliente demostración ARCA', 'Giovanni Colombo (demo)')
+       AND denominacion IN ('Cliente demostración ARCA', 'Giovanni Colombo (demo)', 'Distribuidora Mendoza SA', 'Juan Lopez', 'Maria Gomez')
      """));
-   assertEquals(3,count(c,"SELECT count(*) FROM cliente"));
-   assertEquals(3,count(c,"SELECT count(*) FROM contacto"));
-   assertEquals(3,count(c,"SELECT count(*) FROM domicilio"));
+   assertEquals(6,count(c,"SELECT count(*) FROM cliente"));
+   assertEquals(6,count(c,"SELECT count(*) FROM contacto"));
+   assertEquals(6,count(c,"SELECT count(*) FROM domicilio"));
    assertEquals(2,count(c,"SELECT count(*) FROM factura_venta"));
    assertEquals(0,count(c,"SELECT count(*) FROM arca_intento"));
   }

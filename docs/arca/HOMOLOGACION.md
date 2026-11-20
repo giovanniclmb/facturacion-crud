@@ -2,7 +2,7 @@
 
 El proyecto incluye autenticación WSAA, consultas WSFEv1, autorización de Factura C y
 recuperación de resultados inciertos, solo en homologación. Arranca con ARCA deshabilitada
-por defecto. El flujo explícito de guardado de Factura C solicita el CAE después de confirmar la operación local.
+por defecto. Una vez guardada la Factura C, solicitar el CAE manualmente desde Comprobantes.
 
 ## Preparación en WSASS
 
@@ -168,7 +168,7 @@ datos diferentes del snapshot, no adopta ese CAE y mantiene el conflicto para co
 
 ### API
 
-- POST `/api/facturas/{id}/arca/autorizar`, JSON `{"confirmarCuitReceptor":true}`.
+- POST `/api/facturas/{id}/arca/autorizar`, JSON `{"confirmarCuitReceptor":true,"revision":2}`. La interfaz envía la revisión del comprobante que el usuario confirmó.
 - GET `/api/facturas/{id}/arca`: solo estado persistido, sin red.
 - POST `/api/facturas/{id}/arca/consultar`: consulta y conciliación, sin emisión.
 
@@ -224,7 +224,7 @@ conceptual DocTipo99/0 no se implementa como fallback para documentos inválidos
    ```
 
 3. Configurar en ese equipo la conexión WSASS de homologación con su certificado, clave y autorización. Cargar en `punto_venta` el número fiscal habilitado y declararlo en `arca.puntos-venta-exclusivos` si queda reservado a esta aplicación. El `99001` se usó con el emisor de la demostración original.
-4. En **Nueva factura**, seleccionar **Factura C**, el punto configurado, **Pesos**, **Responsable Inscripto** y uno de los clientes **Cliente demostración ARCA** o **Giovanni Colombo (demo)**. Ambos registros locales representan al mismo receptor de ejemplo `30000000007`, tomado del [manual de WSFEv1](https://www.arca.gob.ar/ws/documentacion/manuales/manual-desarrollador-ARCA-COMPG.pdf). Agregar un artículo, confirmar el CUIT y pulsar **Guardar y solicitar CAE**.
+4. En **Nueva factura**, seleccionar **Factura C**, el punto configurado, **Pesos**, **Responsable Inscripto** y uno de los clientes **Cliente demostración ARCA** o **Giovanni Colombo (demo)**. Ambos registros locales representan al mismo receptor de ejemplo `30000000007`, tomado del [manual de WSFEv1](https://www.arca.gob.ar/ws/documentacion/manuales/manual-desarrollador-ARCA-COMPG.pdf). Agregar un artículo y pulsar **Guardar Factura C**. En Comprobantes, confirmar el CUIT y pulsar **Informar a ARCA**.
 
 La carga de clientes conserva los registros existentes. Si encuentra alguno de los dos nombres con un documento diferente o dado de baja, revierte la transacción e informa cuál debe revisarse. Los comprobantes y CAE se generan al realizar la prueba desde ese equipo.
 
@@ -248,6 +248,4 @@ ARCA_VERIFICAR_FACTURA_ID=73 \
 ./mvnw -Dtest=ConsultaHomologacionManualTests test
 ```
 
-El guardado explícito de Factura C reemplaza el paso manual para las nuevas altas o para
-una edición elegible. La acción de consulta sigue disponible para resultados inciertos.
-El botón manual histórico y los contratos REST previos se mantienen para sus consumidores.
+El guardado y la edición de una Factura C se completan localmente. La solicitud se inicia con **Informar a ARCA** y la consulta sigue disponible para resultados inciertos.

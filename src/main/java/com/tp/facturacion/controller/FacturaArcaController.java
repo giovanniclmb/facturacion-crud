@@ -15,7 +15,10 @@ public class FacturaArcaController {
     @GetMapping public FacturaArcaDto estado(@PathVariable long id) { return servicio.estado(id); }
     @PostMapping("/autorizar")
     public ResponseEntity<FacturaArcaDto> autorizar(@PathVariable long id, @RequestBody AutorizarArcaRequest request) {
-        return resultado(servicio.autorizar(id,request.confirmarCuitReceptor()));
+        if (request.revision() == null || request.revision() < 0) {
+            throw new IllegalArgumentException("Falta la revisión vigente del comprobante. Recargá el listado antes de informar a ARCA");
+        }
+        return resultado(servicio.autorizar(id, request.confirmarCuitReceptor(), request.revision()));
     }
     @PostMapping("/consultar")
     public ResponseEntity<FacturaArcaDto> consultar(@PathVariable long id) { return resultado(servicio.consultar(id)); }

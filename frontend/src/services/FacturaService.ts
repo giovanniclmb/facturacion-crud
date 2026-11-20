@@ -64,9 +64,9 @@ export class FacturaService {
         return pedir<FacturaArcaDTO>(`${this.baseUrl}/${id}/arca`);
     }
 
-    autorizarArca(id: number, confirmarCuitReceptor: boolean): Promise<FacturaArcaDTO> {
+    autorizarArca(id: number, confirmarCuitReceptor: boolean, revision?: number): Promise<FacturaArcaDTO> {
         return pedir<FacturaArcaDTO>(`${this.baseUrl}/${id}/arca/autorizar`, {
-            method: 'POST', body: JSON.stringify({ confirmarCuitReceptor })
+            method: 'POST', body: JSON.stringify({ confirmarCuitReceptor, revision })
         });
     }
 

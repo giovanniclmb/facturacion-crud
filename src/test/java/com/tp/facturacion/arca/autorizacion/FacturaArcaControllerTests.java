@@ -33,17 +33,35 @@ class FacturaArcaControllerTests {
         verify(servicio).estado(1);verifyNoMoreInteractions(servicio);
     }
     @Test void autorizarSoloRecibeConfirmacionNoDatosFiscales() throws Exception {
-        when(servicio.autorizar(1,true)).thenReturn(dto(AUTORIZADO));
+        when(servicio.autorizar(1, true, 0L)).thenReturn(dto(AUTORIZADO));
         mvc.perform(post("/api/facturas/1/arca/autorizar").contentType(MediaType.APPLICATION_JSON)
-           .content("{\"confirmarCuitReceptor\":true,\"numeroFiscal\":99,\"importeTotal\":1}"))
+           .content("{\"confirmarCuitReceptor\":true,\"revision\":0,\"numeroFiscal\":99,\"importeTotal\":1}"))
            .andExpect(status().isOk()).andExpect(jsonPath("$.numeroFiscal").value(1));
-        verify(servicio).autorizar(1,true);
+        verify(servicio).autorizar(1, true, 0L);
     }
-    @Test void rechazoFiscalEsResultado200() throws Exception {
-        when(servicio.autorizar(1,true)).thenReturn(dto(RECHAZADO));
+    @Test void autorizarUsaLaRevisionConfirmadaPorElCliente() throws Exception {
+        when(servicio.autorizar(1, true, 5L)).thenReturn(dto(AUTORIZADO));
         mvc.perform(post("/api/facturas/1/arca/autorizar").contentType(MediaType.APPLICATION_JSON)
-           .content("{\"confirmarCuitReceptor\":true}")).andExpect(status().isOk());
+                .content("""
+                        {"confirmarCuitReceptor":true,"revision":5}
+                        """))
+                .andExpect(status().isOk());
+        verify(servicio).autorizar(1, true, 5L);
     }
+
+    @Test void rechazoFiscalEsResultado200() throws Exception {
+        when(servicio.autorizar(1, true, 0L)).thenReturn(dto(RECHAZADO));
+        mvc.perform(post("/api/facturas/1/arca/autorizar").contentType(MediaType.APPLICATION_JSON)
+           .content("{\"confirmarCuitReceptor\":true,\"revision\":0}")).andExpect(status().isOk());
+    }
+    @Test void revisionAusenteNoAutoriza() throws Exception {
+        mvc.perform(post("/api/facturas/1/arca/autorizar").contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"confirmarCuitReceptor":true}
+                        """)).andExpect(status().isBadRequest());
+        verifyNoInteractions(servicio);
+    }
+
     @Test void cuerpoAusenteNoAutoriza() throws Exception {
         mvc.perform(post("/api/facturas/1/arca/autorizar")).andExpect(status().isBadRequest());
         verifyNoInteractions(servicio);

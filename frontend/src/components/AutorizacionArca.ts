@@ -10,7 +10,7 @@ interface CoordinacionArca {
     iniciar(): void;
     finalizar(): void;
     bloquearRecuperacion(bloquear: boolean): void;
-    estadoActualizado(estado: FacturaArcaDTO): void;
+    estadoActualizado(estado: FacturaArcaDTO, recargarComprobantes: boolean): void;
 }
 
 /** No consulta al construir: la página del backend ya incluye estado y permisos. */
@@ -24,6 +24,7 @@ export class AutorizacionArca {
     readonly recargar = this.boton('Estado de ARCA', 'btn-recargar-arca');
     private ocupado = false;
     private recuperacionFallida = false;
+    private revisionDesactualizada = false;
     private detalle?: FacturaArcaDTO;
 
     constructor(private readonly factura: FacturaReporteDTO, private readonly servicio: FacturaService,
@@ -71,7 +72,7 @@ export class AutorizacionArca {
         const bloqueada = this.ocupado || this.coordinacion.bloqueada();
         this.informar.hidden = !permisos.autorizar;
         this.etiqueta.hidden = !permisos.autorizar;
-        this.informar.disabled = bloqueada || !permisos.autorizar || !this.confirmar.checked;
+        this.informar.disabled = bloqueada || this.revisionDesactualizada || !permisos.autorizar || !this.confirmar.checked;
         this.confirmar.disabled = bloqueada;
         this.consultar.hidden = !permisos.consultar;
         this.consultar.disabled = bloqueada || !permisos.consultar;
@@ -110,7 +111,7 @@ export class AutorizacionArca {
     private async ejecutar(operacion: 'autorizar' | 'consultar' | 'estado'): Promise<void> {
         const permisos = permisosFactura(this.factura);
         if (this.ocupado || (operacion !== 'estado' && this.coordinacion.bloqueada())) return;
-        if (operacion === 'autorizar' && (!permisos.autorizar || !this.confirmar.checked)) return;
+        if (operacion === 'autorizar' && (this.revisionDesactualizada || !permisos.autorizar || !this.confirmar.checked)) return;
         if (operacion === 'consultar' && !permisos.consultar) return;
         const conservarFoco = this.acciones.contains(document.activeElement) || document.activeElement === this.recargar;
         this.ocupado = true;
@@ -121,11 +122,12 @@ export class AutorizacionArca {
         try {
             let resultado: FacturaArcaDTO;
             try {
-                resultado = operacion === 'autorizar' ? await this.servicio.autorizarArca(this.factura.id, true)
+                resultado = operacion === 'autorizar' ? await this.servicio.autorizarArca(this.factura.id, true, this.factura.revision)
                     : operacion === 'consultar' ? await this.servicio.consultarArca(this.factura.id)
                     : await this.servicio.estadoArca(this.factura.id);
             } catch (error) {
                 if (operacion === 'estado') throw error;
+                if (error instanceof ApiError && error.status === 409) this.revisionDesactualizada = true;
                 // Cualquier fallo después del POST puede ocultar un resultado durable.
                 resultado = await this.servicio.estadoArca(this.factura.id);
                 if (error instanceof ApiError && error.status !== 0) {
@@ -142,7 +144,10 @@ export class AutorizacionArca {
             this.recuperacionFallida = false;
             this.confirmar.checked = false;
             this.actualizarDatos(resultado);
-            this.coordinacion.estadoActualizado(resultado);
+            if (operacion === 'autorizar' && resultado.estadoFiscal === 'RECHAZADO') {
+                this.revisionDesactualizada = true;
+            }
+            this.coordinacion.estadoActualizado(resultado, this.revisionDesactualizada);
             this.coordinacion.bloquearRecuperacion(false);
         } catch {
             this.recuperacionFallida = true;

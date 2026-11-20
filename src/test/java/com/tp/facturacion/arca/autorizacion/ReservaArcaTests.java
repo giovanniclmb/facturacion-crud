@@ -65,6 +65,14 @@ class ReservaArcaTests {
   almacen.fallarAntesEnvio(r);
   assertEquals(ENVIANDO,almacen.estado(1).estadoFiscal());
  }
+ @Test void laRevisionObsoletaNoCreaIntentoFiscal() {
+  var cambio = new FacturaRequestDto();
+  cambio.setClienteId(2L);
+  facturas.actualizar(1L, cambio);
+
+  assertThrows(ReglaNegocioException.class, () -> almacen.reservar(1, serie, Set.of(6), true, 0L));
+  assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM arca_intento", Integer.class));
+ }
  @Test void recuperarPreparacionInvalidaPropietarioViejo() {
   Reserva viejo=almacen.reservar(1,serie,Set.of(6),true);
   Reserva nuevo=almacen.recuperarPreparando(1);

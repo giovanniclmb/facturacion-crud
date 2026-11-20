@@ -9,6 +9,7 @@ export type EstadoFactura = 'PENDIENTE' | 'EMITIDA' | 'ANULADA';
 export interface FacturaReporteDTO {
     id: number;
     numeroFactura: number | null;
+    revision?: number;
     tipoComprobante?: TipoComprobante | null;
     puedeImprimir?: boolean;
     fechaEmision: string;            // "yyyy-MM-dd" (por el @JsonFormat de Java)
@@ -61,6 +62,8 @@ export interface FacturaEdicionDTO {
     fechaEmision: string;
     observaciones: string | null;
     puedeModificar: boolean;
+    puedeCambiarTipo: boolean;
+    puntosVentaHomologacion: OpcionDTO[];
     detalles: (Omit<ListaPrecioArticuloExplorerDTO, 'id'> & {
         listaPrecioArticuloId: number;
         descripcion: string | null;
@@ -74,7 +77,6 @@ export interface FacturaRequestDTO {
     listaPrecioId?: number;
     revision?: number;
     operacionGuardado?: string;
-    confirmarCuitReceptor?: boolean;
     puntoVentaId?: number;
     clienteId?: number;
     condicionIvaId?: number;

@@ -18,6 +18,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.tp.facturacion.arca.ArcaProperties;
+import com.tp.facturacion.dto.OpcionDto;
 import com.tp.facturacion.dto.FacturaDetalleRequestDto;
 import com.tp.facturacion.dto.FacturaFiltroDto;
 import com.tp.facturacion.dto.FacturaEdicionDto;
@@ -82,6 +84,7 @@ public class FacturaService {
     private final ListaPrecioArticuloRepository listaPrecioArticuloRepository;
     private final UsuarioRepository usuarioRepository;
     private final ListasFacturaService listas;
+    private final ArcaProperties arca;
     private final com.tp.facturacion.arca.autorizacion.IntentoArcaRepository intentosArca;
 
     @Value("${facturacion.usuario-sistema-id}")
@@ -95,8 +98,10 @@ public class FacturaService {
                           ListaPrecioArticuloRepository listaPrecioArticuloRepository,
                           UsuarioRepository usuarioRepository,
                           com.tp.facturacion.arca.autorizacion.IntentoArcaRepository intentosArca,
-                          com.tp.facturacion.arca.autorizacion.ArcaReporteEnriquecedor arcaReportes, ListasFacturaService listas) {
+                          com.tp.facturacion.arca.autorizacion.ArcaReporteEnriquecedor arcaReportes, ListasFacturaService listas,
+                          ArcaProperties arca) {
         this.listas = listas;
+        this.arca = arca;
         this.arcaReportes=arcaReportes;
         this.facturaVentaRepository = facturaVentaRepository;
         this.puntoVentaRepository = puntoVentaRepository;
@@ -217,6 +222,15 @@ public class FacturaService {
                             detalle.getDescripcion(), detalle.getCantidad(), detalle.getPorcentajeBonificacion(),
                             detalle.getPrecioUnitario());
                 }).toList();
+        var reporte = obtenerReporte(id);
+        boolean puedeCambiarTipo = reporte.isPuedeModificar()
+                && factura.getTipoComprobante() != null && reporte.getEstadoFiscal() == null;
+        List<OpcionDto> puntosHomologacion = puedeCambiarTipo
+                && factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL
+                ? puntosVentaHomologacion().stream()
+                        .map(punto -> new OpcionDto(punto.getId(), punto.getNumero() + " · " + punto.getDescripcion()))
+                        .toList()
+                : List.of();
         return new FacturaEdicionDto(id, factura.getRevision(), factura.getTipoComprobante(),
                 factura.getPuntoVenta().getId(), cliente == null ? null : cliente.getId(),
                 cliente == null ? null : cliente.getDenominacion(), cliente == null ? null : cliente.getCuitCuil(),
@@ -224,7 +238,13 @@ public class FacturaService {
                 factura.getListaPrecio() == null ? null : factura.getListaPrecio().getId(),
                 Instant.ofEpochMilli(factura.getFechaEmision().getTime())
                         .atZone(ZoneId.of("America/Argentina/Mendoza")).toLocalDate(),
-                factura.getObservaciones(), obtenerReporte(id).isPuedeModificar(), items);
+                factura.getObservaciones(), reporte.isPuedeModificar(), puedeCambiarTipo, puntosHomologacion, items);
+    }
+
+    private List<PuntoVenta> puntosVentaHomologacion() {
+        var numeros = arca.getPuntosVentaExclusivos();
+        return numeros == null || numeros.isEmpty() ? List.of()
+                : puntoVentaRepository.findByNumeroInAndFechaBajaIsNullOrderByNumeroAscIdAsc(numeros);
     }
 
     private void asignarReceptor(FacturaVenta factura, FacturaRequestDto request) {
@@ -330,17 +350,22 @@ public class FacturaService {
             if (!request.getRevision().equals(factura.getRevision())) {
                 throw new ReglaNegocioException("La factura cambió. Volvé a abrirla antes de guardar");
             }
-            if (factura.getTipoComprobante() != null && factura.getTipoComprobante() != request.getTipoComprobante()) {
-                throw new ReglaNegocioException("El tipo de comprobante no puede cambiarse");
-            }
             if (factura.getTipoComprobante() == null && request.getTipoComprobante() != TipoComprobante.FACTURA_C) {
                 throw new ReglaNegocioException("La factura anterior debe conservar su cliente");
+            }
+            if (request.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL
+                    && factura.getTipoComprobante() != TipoComprobante.CONSUMIDOR_FINAL
+                    && intentosArca.existsByFacturaId(id)) {
+                throw new ReglaNegocioException("El tipo no puede cambiarse después de solicitar una autorización fiscal");
+            }
+            if (factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL
+                    && request.getTipoComprobante() == TipoComprobante.FACTURA_C) {
+                asignarPuntoAlConvertir(factura, request.getPuntoVentaId());
             }
             factura.setTipoComprobante(request.getTipoComprobante());
             asignarReceptor(factura, request);
             factura.setListaPrecio(listas.activa(request.getListaPrecioId()));
         }
-        // Cabecera
         if (request.getPuntoVentaId() != null
                 && !request.getPuntoVentaId().equals(factura.getPuntoVenta().getId())) {
             throw new ReglaNegocioException("El punto de venta de una factura no puede cambiarse");
@@ -409,6 +434,23 @@ public class FacturaService {
     }
 
     // ======================= AUXILIARES =======================
+
+    private void asignarPuntoAlConvertir(FacturaVenta factura, Long puntoSolicitado) {
+        Long puntoActual = factura.getPuntoVenta().getId();
+        Long puntoDestino = puntoSolicitado == null ? puntoActual : puntoSolicitado;
+        if (puntosVentaHomologacion().stream().noneMatch(punto -> punto.getId().equals(puntoDestino))) {
+            throw new ReglaNegocioException("Seleccione un punto de venta habilitado para homologación");
+        }
+        if (!puntoDestino.equals(puntoActual)) {
+            var punto = puntoVentaRepository.buscarBloqueado(puntoDestino)
+                    .orElseThrow(() -> new RecursoNoEncontradoException("No existe el punto de venta seleccionado"));
+            if (punto.getFechaBaja() != null) {
+                throw new ReglaNegocioException("El punto de venta seleccionado está dado de baja");
+            }
+            factura.setNumero(facturaVentaRepository.ultimoNumeroPorPuntoVenta(puntoDestino) + 1);
+            factura.setPuntoVenta(punto);
+        }
+    }
 
     private FacturaVentaDetalle crearDetalle(FacturaDetalleRequestDto request, ListaPrecio lista) {
         ListaPrecioArticulo precio;

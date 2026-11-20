@@ -64,13 +64,13 @@ test('ARCA usa los contratos explícitos, acepta 202 y nunca reintenta POST', as
     };
     try {
         const servicio = new FacturaService();
-        assert.equal((await servicio.autorizarArca(7, true)).estadoFiscal, 'INCIERTO');
+        assert.equal((await servicio.autorizarArca(7, true, 2)).estadoFiscal, 'INCIERTO');
         await servicio.consultarArca(7);
         await servicio.estadoArca(7);
         assert.deepEqual(llamadas.map(([url, op]) => [url, op.method ?? 'GET']), [
             ['/api/facturas/7/arca/autorizar', 'POST'], ['/api/facturas/7/arca/consultar', 'POST'], ['/api/facturas/7/arca', 'GET']
         ]);
-        assert.deepEqual(JSON.parse(llamadas[0][1].body), { confirmarCuitReceptor: true });
+        assert.deepEqual(JSON.parse(llamadas[0][1].body), { confirmarCuitReceptor: true, revision: 2 });
         globalThis.fetch = async () => { llamadas.push(['fallo']); throw new TypeError('Sin conexión'); };
         await assert.rejects(servicio.autorizarArca(7, true));
         assert.equal(llamadas.length, 4);

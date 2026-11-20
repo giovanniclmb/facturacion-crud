@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { montar, factura, pagina, respuesta, flush, diferida } from './appDOM.helpers.mjs';
 
-const borrador = { ...factura, estadoFiscal: null, puedeAutorizar: true, puedeConsultar: false, puedeModificar: true, puedeAnular: true, puedeEliminar: true };
+const borrador = { ...factura, revision: 2, estadoFiscal: null, puedeAutorizar: true, puedeConsultar: false, puedeModificar: true, puedeAnular: true, puedeEliminar: true };
 const incierto = { facturaId: 1, numeroLocal: 42, intentoId: 'test', estadoFiscal: 'INCIERTO', numeroFiscal: 1, puntoVenta: 1, tipoComprobante: 11, ambiente: 'HOMOLOGACION', cae: null, caeVencimiento: null, mensaje: 'Resultado pendiente. Consulte ARCA.', errores: [], observaciones: [], puedeAutorizar: false, puedeConsultar: true, puedeModificar: false, puedeAnular: false, puedeEliminar: false };
 const preparar = resolver => montar({ resolver: llamada => resolver(llamada) ?? (llamada.url.includes('/facturas?') ? respuesta(pagina([borrador])) : undefined) });
 const confirmar = ui => {
@@ -87,7 +87,17 @@ test('consulta un incierto recargado y muestra autorización fiscal separada del
 
 test('rechazo muestra errores como texto y requiere nueva confirmación para corregir y autorizar', async () => {
     const rechazado = { ...incierto, estadoFiscal: 'RECHAZADO', puedeAutorizar: true, puedeConsultar: false, puedeModificar: true, puedeAnular: true, puedeEliminar: true, mensaje: 'Corregir receptor', errores: [{ codigo: 100, mensaje: '<script>alert(1)</script>' }] };
-    const ui = await preparar(llamada => llamada.url.endsWith('/arca/autorizar') ? respuesta(rechazado) : undefined);
+    let envios = 0;
+    const ui = await preparar(llamada => {
+        if (llamada.url.endsWith('/arca/autorizar')) {
+            envios++;
+            return respuesta(rechazado);
+        }
+        if (llamada.url.includes('/facturas?') && envios > 0) {
+            return respuesta(pagina([{ ...borrador, revision: 2 + envios, estadoFiscal: 'RECHAZADO',
+                mensajeArca: '100: <script>alert(1)</script>' }]));
+        }
+    });
     try {
         confirmar(ui); ui.document.querySelector('.btn-informar-arca').click();
         await flush();
@@ -96,6 +106,11 @@ test('rechazo muestra errores como texto y requiere nueva confirmación para cor
         assert.equal(ui.document.querySelector('.btn-informar-arca').disabled, true);
         assert.match(ui.document.querySelector('.arca-estado').textContent, /100: <script>/);
         assert.equal(ui.document.querySelector('.arca-estado script'), null);
+        confirmar(ui); ui.document.querySelector('.btn-informar-arca').click();
+        await flush();
+        const revisiones = ui.llamados.filter(l => l.url.endsWith('/arca/autorizar'))
+            .map(l => JSON.parse(l.opciones.body).revision);
+        assert.deepEqual(revisiones, [2, 3]);
     } finally { ui.cerrar(); }
 });
 

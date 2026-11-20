@@ -6,8 +6,8 @@ facturas, genera **reportes en PDF y Excel**, y se consume desde un **frontend w
 
 Incluye conexión WSAA/WSFEv1, diagnóstico, autorización de Factura C y recuperación de
 resultados inciertos de **ARCA (ex AFIP)** en homologación. ARCA está deshabilitada por
-defecto. Al guardar explícitamente una Factura C, la aplicación solicita CAE para el
-punto de venta exclusivo configurado. Los comprobantes internos se guardan por separado.
+defecto. Las Facturas C se guardan localmente y el usuario solicita el CAE desde Comprobantes
+para el punto de venta exclusivo configurado.
 
 ## Stack
 
@@ -25,8 +25,8 @@ punto de venta exclusivo configurado. Los comprobantes internos se guardan por s
 
 ## Alta, edición e impresión
 
-- **Factura C** exige un cliente del padrón y confirmación del CUIT. El guardado solicita CAE en homologación. Un rechazo conserva la factura editable y el motivo. Si el resultado es incierto, usar **Consultar ARCA** desde la grilla.
-- **Factura B - Consumidor Final** genera un comprobante interno sin cliente ni CAE. Las facturas pendientes o rechazadas se pueden editar. El punto de venta permanece fijo y se recalculan los ítems a precio vigente.
+- **Factura C** exige un cliente del padrón. Una vez guardada, marcar la confirmación del CUIT y pulsar **Informar a ARCA** desde Comprobantes. Un rechazo conserva la factura editable y el motivo. Si el resultado es incierto, usar **Consultar ARCA**.
+- **Factura B - Consumidor Final** genera un comprobante interno sin cliente ni CAE. Se puede convertir a Factura C y elegir un punto de homologación. La conversión de C a B está disponible antes del primer intento fiscal registrado. En las ediciones se recalculan los ítems a precio vigente.
 - La lista **General** se selecciona inicialmente. Si falta un precio en la lista elegida, se muestra el de General con su origen. Las listas de demostración se cargan con [precios_mayorista.sql](db/demo/precios_mayorista.sql) y luego [precios_costo.sql](db/demo/precios_costo.sql).
 - **Comprobantes registrados** ordena por fecha de emisión descendente. El selector, el desempate por ID y el orden se aplican también a PDF y Excel. **Ver comprobante** abre el PDF individual en todas las filas. Cuando la autorización no está confirmada, el PDF se identifica como copia sin validez fiscal. **Estado de ARCA** muestra el último estado registrado de cada comprobante.
 
@@ -93,7 +93,7 @@ frontend (localhost:3000)                     backend (localhost:8080)
 | GET | `/api/catalogos/listas-precio-articulos/explorer` | Búsqueda paginada por código/artículo/lista de precios activos | 200 · 400 |
 | GET | `/api/arca/diagnostico?puntoVenta=1` | Estado, ticket y último número autorizado de Factura C en homologación | 200 · 400 · 502 · 503 |
 | GET | `/api/facturas/{id}/arca` | Estado fiscal persistido, sin llamadas a ARCA | 200 · 404 |
-| POST | `/api/facturas/{id}/arca/autorizar` | Solicitar CAE, JSON `{"confirmarCuitReceptor":true}` | 200 · 202 · 400 · 404 · 409 · 502 · 503 |
+| POST | `/api/facturas/{id}/arca/autorizar` | Solicitar CAE, JSON `{"confirmarCuitReceptor":true,"revision":2}` | 200 · 202 · 400 · 404 · 409 · 502 · 503 |
 | POST | `/api/facturas/{id}/arca/consultar` | Recuperar resultado sin solicitar CAE | 200 · 202 · 404 · 409 · 502 · 503 |
 
 El listado admite `numeroFactura` (coincidencia exacta), `clienteId`, `fechaDesde`,

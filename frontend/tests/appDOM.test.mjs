@@ -201,3 +201,46 @@ test('los comprobantes existentes e internos ofrecen PDF y estado de ARCA', asyn
         'Factura B - Consumidor Final');
     assert.match(porId(app, 'facturas-tbody').rows[1].textContent, /No aplica/);
 });
+
+test('editar una B permite guardarla como C sin solicitar CAE', async t => {
+    const interna = { ...factura, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true };
+    const app = await montar({ resolver: llamada => {
+        const url = new URL(llamada.url);
+        if (url.pathname.endsWith('/facturas') && llamada.method === 'GET') return respuesta(pagina([interna]));
+        if (url.pathname.endsWith('/1/detalle')) return respuesta({
+            id: 1, revision: 2, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true, puedeCambiarTipo: true,
+            puntoVentaId: 1, puntosVentaHomologacion: [{ id: 2, descripcion: '99001 · Homologación' }],
+            clienteId: null, condicionIvaId: 5, tipoMonedaId: 1, listaPrecioId: 1, fechaEmision: '2026-11-20',
+            detalles: [{ ...precio, listaPrecioArticuloId: precio.id, cantidad: 1, porcentajeBonificacion: 0 }]
+        });
+        if (url.pathname.endsWith('/listas-precio-articulos/precio')) return respuesta(precio);
+        if (url.pathname.endsWith('/puntos-venta')) return respuesta([...opcion, { id: 2, descripcion: 'Homologación' }]);
+        if (llamada.method === 'PUT') return respuesta({ ...interna, tipoComprobante: 'FACTURA_C' });
+    } });
+    t.after(() => app.cerrar());
+    [...app.document.querySelectorAll('button')].find(boton => boton.textContent === 'Editar').click();
+    await flush();
+    const tipo = porId(app, 'alta-tipo');
+    assert.equal(tipo.disabled, false);
+    tipo.value = 'FACTURA_C';
+    tipo.dispatchEvent(new app.window.Event('change'));
+    assert.equal(porId(app, 'alta-campo-cliente').hidden, false);
+    assert.equal(porId(app, 'alta-punto-venta').disabled, false);
+    porId(app, 'alta-punto-venta').value = '2';
+    porId(app, 'alta-condicion-iva').value = '1';
+    porId(app, 'btn-alta-cliente').click();
+    await flush();
+    app.document.querySelector('#explorer-clientes button[aria-label^="Seleccionar"]').click();
+    await flush();
+    submit(app, 'form-alta');
+    await flush();
+
+    const put = app.llamados.find(llamada => llamada.method === 'PUT');
+    assert.ok(put);
+    const datos = JSON.parse(put.opciones.body);
+    assert.equal(datos.tipoComprobante, 'FACTURA_C');
+    assert.equal(datos.puntoVentaId, 2);
+    assert.equal(datos.clienteId, 1);
+    assert.equal(datos.revision, 2);
+    assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
+});

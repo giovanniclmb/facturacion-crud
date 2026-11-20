@@ -47,7 +47,14 @@ let catalogosCargando = false;
 let creandoFactura = false;
 let cargandoEdicion = false;
 let cotizandoItems = false;
-let edicion: { id: number; revision: number } | null = null;
+let puntosVentaCatalogo: OpcionDTO[] = [];
+let edicion: {
+    id: number;
+    revision: number;
+    tipoOriginal: TipoComprobante | null;
+    puntoOriginal: number;
+    puntosVentaHomologacion: OpcionDTO[];
+} | null = null;
 let operacionAlta: string | undefined;
 const operacionesEnCurso = new Set<number>();
 const recuperacionesArcaPendientes = new Set<number>();
@@ -96,7 +103,7 @@ const catalogosEstado = elemento<HTMLParagraphElement>('catalogos-estado');
 const btnReintentarCatalogos = elemento<HTMLButtonElement>('btn-reintentar-catalogos');
 const altaTipo = elemento<HTMLSelectElement>('alta-tipo');
 const altaLista = elemento<HTMLSelectElement>('alta-lista-precio');
-const confirmarCuit = elemento<HTMLInputElement>('alta-confirmar-cuit');
+const ayudaPuntoFiscal = elemento<HTMLElement>('alta-ayuda-punto-fiscal');
 const panelAlta = elemento<HTMLDetailsElement>('panel-alta');
 const tituloFormulario = elemento<HTMLSpanElement>('titulo-formulario');
 const altaRechazo = elemento<HTMLDivElement>('alta-rechazo');
@@ -255,7 +262,8 @@ async function cargarCatalogos(): Promise<void> {
             catalogoService.obtenerMonedas(),
             catalogoService.obtenerListasPrecio()
         ]);
-        llenarSelect(altaPuntoVenta, puntosVenta, 'Seleccione…');
+        puntosVentaCatalogo = puntosVenta;
+        llenarSelect(altaPuntoVenta, puntosVentaCatalogo, 'Seleccione…');
         llenarSelect(altaCondicionIva, condicionesIva, 'Seleccione…');
         llenarSelect(altaMoneda, monedas, 'Seleccione…');
         llenarSelect(altaLista, listas, 'Seleccione…');
@@ -420,6 +428,7 @@ function agregarItem(): void {
 }
 
 function reiniciarFormularioAlta(): void {
+    if (edicion) llenarSelect(altaPuntoVenta, puntosVentaCatalogo, 'Seleccione…');
     edicion = null;
     operacionAlta = undefined;
     formAlta.reset();
@@ -447,10 +456,26 @@ function esInterno(): boolean {
 }
 
 function sincronizarTipo(): void {
-    for (const id of ['alta-campo-cliente', 'alta-campo-iva', 'alta-campo-confirmacion']) {
+    for (const id of ['alta-campo-cliente', 'alta-campo-iva']) {
         elemento(id).hidden = esInterno();
     }
-    btnCrear.textContent = esInterno() ? 'Guardar Factura B' : 'Guardar y solicitar CAE';
+    btnCrear.textContent = esInterno() ? 'Guardar Factura B' : 'Guardar Factura C';
+    ayudaPuntoFiscal.hidden = true;
+    if (!edicion) return;
+
+    const convirtiendo = edicion.tipoOriginal === 'CONSUMIDOR_FINAL' && !esInterno();
+    const puntosFiscales = edicion.puntosVentaHomologacion;
+    const permiteElegirPunto = convirtiendo && puntosFiscales.length > 0;
+    const puntoElegido = idSeleccionado(altaPuntoVenta) ?? edicion.puntoOriginal;
+    llenarSelect(altaPuntoVenta, permiteElegirPunto ? puntosFiscales : puntosVentaCatalogo, 'Seleccione…');
+    altaPuntoVenta.value = permiteElegirPunto
+        ? (puntosFiscales.some(punto => punto.id === puntoElegido) ? String(puntoElegido) : '')
+        : String(edicion.puntoOriginal);
+    altaPuntoVenta.disabled = !permiteElegirPunto;
+    ayudaPuntoFiscal.hidden = !convirtiendo;
+    ayudaPuntoFiscal.textContent = permiteElegirPunto
+        ? 'Seleccioná un punto habilitado para homologación.'
+        : 'Configurá un punto habilitado para poder homologar.';
 }
 
 async function recotizarItems(): Promise<void> {
@@ -492,13 +517,15 @@ async function editarFactura(factura: FacturaReporteDTO): Promise<void> {
             return;
         }
         reiniciarFormularioAlta();
-        edicion = { id: detalle.id, revision: detalle.revision };
+        edicion = {
+            id: detalle.id, revision: detalle.revision, tipoOriginal: detalle.tipoComprobante,
+            puntoOriginal: detalle.puntoVentaId, puntosVentaHomologacion: detalle.puntosVentaHomologacion
+        };
         altaTipo.value = detalle.tipoComprobante ?? 'FACTURA_C';
-        altaTipo.disabled = true;
+        altaTipo.disabled = !detalle.puedeCambiarTipo;
         altaPuntoVenta.value = String(detalle.puntoVentaId);
-        altaPuntoVenta.disabled = true;
         altaMoneda.value = String(detalle.tipoMonedaId);
-        altaCondicionIva.value = String(detalle.condicionIvaId);
+        altaCondicionIva.value = esInterno() ? '' : String(detalle.condicionIvaId);
         if (detalle.listaPrecioId !== null) altaLista.value = String(detalle.listaPrecioId);
         altaFecha.value = detalle.fechaEmision;
         altaObservaciones.value = detalle.observaciones ?? '';
@@ -514,7 +541,7 @@ async function editarFactura(factura: FacturaReporteDTO): Promise<void> {
         }));
         if (items.length === 0) agregarItem();
         else renderizarItems();
-        tituloFormulario.textContent = `Editar ${esInterno() ? NOMBRE_FACTURA_CONSUMIDOR_FINAL : 'Factura C'} · N.º local ${factura.numeroFactura}`;
+        tituloFormulario.textContent = `Editar comprobante · N.º local ${factura.numeroFactura}`;
         btnCancelarEdicion.hidden = false;
         if (factura.estadoFiscal === 'RECHAZADO') {
             altaRechazo.textContent = factura.mensajeArca || 'Solicitud rechazada por ARCA.';
@@ -542,10 +569,13 @@ function idSeleccionado(select: HTMLSelectElement): number | undefined {
 /** Validaciones rápidas antes de llamar al backend (que igual valida todo). */
 function validarAlta(): string[] {
     const errores: string[] = [];
-    if (!altaPuntoVenta.value) errores.push('Seleccione el punto de venta');
+    if (edicion?.tipoOriginal === 'CONSUMIDOR_FINAL' && !esInterno() && edicion.puntosVentaHomologacion.length === 0) {
+        errores.push('Configurá un punto habilitado para convertir el comprobante a Factura C');
+    } else if (!altaPuntoVenta.value) {
+        errores.push('Seleccione el punto de venta');
+    }
     if (!esInterno() && !clienteAlta) errores.push('Seleccione el cliente');
     if (!esInterno() && !altaCondicionIva.value) errores.push('Seleccione la condición de IVA');
-    if (!esInterno() && !confirmarCuit.checked) errores.push('Confirme el CUIT del receptor');
     if (!altaLista.value) errores.push('Seleccione la lista de precios');
     if (!altaMoneda.value) errores.push('Seleccione la moneda');
     items.forEach((item, i) => {
@@ -573,7 +603,6 @@ function leerFormularioAlta(): FacturaRequestDTO {
         listaPrecioId: idSeleccionado(altaLista),
         revision: edicion?.revision,
         operacionGuardado: operacionAlta,
-        confirmarCuitReceptor: !esInterno() && confirmarCuit.checked,
         clienteId: esInterno() ? undefined : clienteAlta?.id,
         condicionIvaId: esInterno() ? undefined : idSeleccionado(altaCondicionIva),
         tipoMonedaId: idSeleccionado(altaMoneda),
@@ -596,19 +625,17 @@ async function crearFactura(evento: SubmitEvent): Promise<void> {
     creandoFactura = true;
     if (!edicion) operacionAlta ??= crypto.randomUUID();
     altaCampos.disabled = true;
-    btnCrear.textContent = esInterno() ? 'Guardando…' : 'Guardando y solicitando CAE…';
+    btnCrear.textContent = 'Guardando…';
     const solicitud = leerFormularioAlta();
     try {
         const guardada = edicion
             ? await facturaService.guardarEdicion(edicion.id, solicitud)
             : await facturaService.crearFactura(solicitud);
         const referencia = `Comprobante N.º local ${guardada.numeroFactura} guardado.`;
-        if (guardada.cae?.trim()) {
-            mostrarMensaje('success', `${referencia} CAE ${guardada.cae} de homologación.`);
-        } else if (guardada.puedeConsultar) {
-            mostrarMensaje('warning', `${referencia} Resultado fiscal pendiente. Usá Consultar ARCA en la grilla.`);
-        } else if (solicitud.tipoComprobante === 'FACTURA_C') {
-            mostrarMensaje('warning', `${referencia} ${guardada.mensajeArca || 'La factura sigue sin CAE. Revisala desde la grilla.'}`);
+        if (solicitud.tipoComprobante === 'FACTURA_C' && !guardada.cae?.trim()) {
+            const pasoArca = guardada.puedeAutorizar ? 'Podés solicitar el CAE desde Comprobantes.'
+                : guardada.mensajeArca || 'Revisá el estado de ARCA desde Comprobantes.';
+            mostrarMensaje('success', `${referencia} ${pasoArca}`);
         } else {
             mostrarMensaje('success', referencia);
         }
@@ -720,10 +747,13 @@ function crearFilaFactura(f: FacturaReporteDTO): HTMLTableRowElement {
             else recuperacionesArcaPendientes.delete(f.id);
             actualizarAcciones();
         },
-        estadoActualizado: resultado => {
+        estadoActualizado: (resultado, recargarComprobantes) => {
             // Una recarga puede haber reemplazado la fila mientras el POST estaba pendiente.
             const visible = accionesVisibles.get(f.id);
             visible?.arca.actualizarDatos(resultado);
+            if (recargarComprobantes) {
+                void cargarFacturas();
+            }
             if (resultado.estadoFiscal === 'AUTORIZADO' && resultado.cae?.trim() && fila.isConnected) {
                 estadoPrincipal.firstElementChild!.textContent = 'Autorizada';
                 estadoPrincipal.firstElementChild!.className = 'badge text-bg-success';
@@ -932,7 +962,6 @@ btnAltaCliente.addEventListener('click', async () => {
     }
     if (cliente) {
         clienteAlta = cliente;
-        confirmarCuit.checked = false;
         altaCliente.value = `${cliente.denominacion} (${cliente.cuitCuil})`;
     }
 });

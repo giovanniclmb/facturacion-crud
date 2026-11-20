@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:h2:mem:crud-consignas;DB_CLOSE_DELAY=-1",
-        "spring.config.import=", "arca.habilitado=false",
+        "spring.config.import=", "arca.habilitado=false", "arca.puntos-venta-exclusivos=99001",
         "spring.datasource.username=sa", "spring.datasource.password=",
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.jpa.hibernate.ddl-auto=create-drop", "spring.jpa.show-sql=false",
@@ -35,7 +35,7 @@ class FacturaCrudConsignasTests {
     void preparar() {
         mvc = MockMvcBuilders.webAppContextSetup(context).build();
         jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-        for (String tabla : new String[]{"factura_venta_detalle", "factura_venta", "lista_precio_articulo", "articulo", "lista_precio", "cliente", "contacto", "domicilio", "usuario", "condicion_iva", "punto_venta", "tipo_moneda"}) {
+        for (String tabla : new String[]{"arca_intento", "arca_serie", "factura_venta_detalle", "factura_venta", "lista_precio_articulo", "articulo", "lista_precio", "cliente", "contacto", "domicilio", "usuario", "condicion_iva", "punto_venta", "tipo_moneda"}) {
             jdbc.update("DELETE FROM " + tabla);
         }
         jdbc.execute("ALTER TABLE factura_venta_detalle ALTER COLUMN id RESTART WITH 100");
@@ -112,11 +112,11 @@ class FacturaCrudConsignasTests {
     }
 
     @Test
-    void guardarFacturaCAutomaticamenteConArcaDeshabilitadaConservaElAlta() throws Exception {
+    void guardarFacturaCSinConfirmacionConservaElAltaSinCae() throws Exception {
         jdbc.update("UPDATE lista_precio SET codigo='GEN', denominacion='General' WHERE id=1");
         mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""
                 {"tipoComprobante":"FACTURA_C","puntoVentaId":1,"clienteId":1,"condicionIvaId":1,
-                 "tipoMonedaId":1,"listaPrecioId":1,"confirmarCuitReceptor":true,
+                 "tipoMonedaId":1,"listaPrecioId":1,
                  "operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547a",
                  "detalles":[{"articuloId":1,"cantidad":1}]}
                 """))
@@ -130,6 +130,91 @@ class FacturaCrudConsignasTests {
             assertTrue(texto.contains("sin validez fiscal"));
             assertTrue(texto.contains("Sin CAE"));
         }
+    }
+
+    @Test
+    void convierteBEnCConPuntoFiscalYVuelveABAntesDelPrimerIntento() throws Exception {
+        prepararConversion();
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""
+                {"tipoComprobante":"CONSUMIDOR_FINAL","puntoVentaId":1,"tipoMonedaId":1,"listaPrecioId":1,
+                 "operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547a",
+                 "detalles":[{"articuloId":1,"cantidad":1}]}
+                """)).andExpect(status().isCreated());
+
+        jdbc.update("UPDATE punto_venta SET fechaBaja = CURRENT_TIMESTAMP WHERE id = 2");
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("FACTURA_C", 1, 0, ",\"clienteId\":2,\"condicionIvaId\":1")))
+                .andExpect(status().isConflict());
+        jdbc.update("UPDATE punto_venta SET fechaBaja = NULL WHERE id = 2");
+
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("FACTURA_C", 2, 0, ",\"clienteId\":2,\"condicionIvaId\":1")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(100))
+                .andExpect(jsonPath("$.tipoComprobante").value("FACTURA_C"))
+                .andExpect(jsonPath("$.clienteDenominacion").value("Cliente 2"))
+                .andExpect(jsonPath("$.estado").value("PENDIENTE"));
+        assertEquals(2L, jdbc.queryForObject("SELECT punto_venta_id FROM factura_venta WHERE id=100", Long.class));
+
+        long revision = jdbc.queryForObject("SELECT revision FROM factura_venta WHERE id=100", Long.class);
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("CONSUMIDOR_FINAL", 2, revision, "")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"));
+        assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM arca_intento", Integer.class));
+    }
+
+    @Test
+    void despuesDeUnaSolicitudRechazadaSePuedeCambiarClientePeroNoTipo() throws Exception {
+        prepararConversion();
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""
+                {"tipoComprobante":"FACTURA_C","puntoVentaId":2,"tipoMonedaId":1,"listaPrecioId":1,
+                 "clienteId":1,"condicionIvaId":1,"operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547a",
+                 "detalles":[{"articuloId":1,"cantidad":1}]}
+                """)).andExpect(status().isCreated());
+        jdbc.update("INSERT INTO arca_serie (id,ambiente,emisor,punto_venta,tipo) VALUES (21,'HOMOLOGACION','30000000007',99001,11)");
+        jdbc.update("""
+                INSERT INTO arca_intento (id,factura_id,serie_id,usuario_iniciador_id,propietario,estado,numero,
+                    concepto,doc_tipo,doc_numero,condicion_iva,fecha,moneda,cotizacion,total,hash,creado,actualizado,errores,observaciones,version)
+                VALUES (RANDOM_UUID(),100,21,999,RANDOM_UUID(),'RECHAZADO',1,
+                    1,80,30000000007,1,CURRENT_DATE,'PES',1,100,'prueba',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'','',0)
+                """);
+
+        mvc.perform(get("/api/facturas/100/detalle")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.puedeModificar").value(true))
+                .andExpect(jsonPath("$.puedeCambiarTipo").value(false));
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("CONSUMIDOR_FINAL", 2, 0, "")))
+                .andExpect(status().isConflict());
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("FACTURA_C", 2, 0, ",\"clienteId\":2,\"condicionIvaId\":1")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.clienteDenominacion").value("Cliente 2"))
+                .andExpect(jsonPath("$.estadoFiscal").value("RECHAZADO"));
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM arca_intento", Integer.class));
+    }
+
+    @Test
+    void unComprobanteHistoricoSinTipoConservaSuCliente() throws Exception {
+        prepararConversion();
+        crear();
+        mvc.perform(get("/api/facturas/100/detalle")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.puedeCambiarTipo").value(false));
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("CONSUMIDOR_FINAL", 1, 0, "")))
+                .andExpect(status().isConflict());
+        assertEquals(1L, jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
+    }
+
+    private void prepararConversion() {
+        jdbc.update("UPDATE lista_precio SET codigo='GEN', denominacion='General' WHERE id=1");
+        auditada("condicion_iva", "id,codigoAfip,denominacion", "2,5,'Consumidor final'");
+        auditada("punto_venta", "id,numero,descripcion", "2,99001,'Homologación'");
+    }
+
+    private String edicion(String tipo, long punto, long revision, String receptor) {
+        return """
+                {"tipoComprobante":"%s","puntoVentaId":%d,"revision":%d,"listaPrecioId":1,
+                 "detalles":[{"articuloId":1,"cantidad":1}]%s}
+                """.formatted(tipo, punto, revision, receptor);
     }
 
     @Test

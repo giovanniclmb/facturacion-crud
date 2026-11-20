@@ -7,7 +7,8 @@ import com.tp.facturacion.model.TipoComprobante;
 public record FacturaEdicionDto(Long id, Long revision, TipoComprobante tipoComprobante,
         Long puntoVentaId, Long clienteId, String clienteDenominacion, String clienteCuit,
         Long condicionIvaId, Long tipoMonedaId, Long listaPrecioId, LocalDate fechaEmision,
-        String observaciones, boolean puedeModificar, List<Item> detalles) {
+        String observaciones, boolean puedeModificar, boolean puedeCambiarTipo,
+        List<OpcionDto> puntosVentaHomologacion, List<Item> detalles) {
 
     public record Item(Long articuloId, Long listaPrecioArticuloId,
             String articuloCodigo, String articuloDenominacion, String listaPrecioCodigo,
