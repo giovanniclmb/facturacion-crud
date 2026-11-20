@@ -53,7 +53,7 @@
             <option value="local">Mostrador de prueba</option>
             <option value="fiscal">99001 · Homologación</option>
           </select>
-          <small data-fiscal>Seleccioná un punto habilitado para homologación.</small>
+          <small id="ayuda-punto">Seleccioná el punto de venta del comprobante.</small>
         </label>
         <div data-fiscal>
           <label for="cliente">Cliente (obligatorio)</label>
@@ -104,9 +104,12 @@ let solicitudRegistrada = false;
 function actualizar() {
   const fiscal = tipo.value === 'C';
   document.querySelectorAll('[data-fiscal]').forEach(el => el.hidden = !fiscal);
-  punto.disabled = !(tipoInicial === 'B' && fiscal);
+  punto.disabled = tipoInicial === tipo.value || solicitudRegistrada;
   punto.value = fiscal || tipoInicial === 'C' ? 'fiscal' : 'local';
-  document.querySelector('small').hidden = punto.disabled;
+  const ayudaPunto = document.getElementById('ayuda-punto');
+  ayudaPunto.hidden = punto.disabled;
+  ayudaPunto.textContent = fiscal ? 'Seleccioná un punto habilitado para homologación.'
+    : 'Podés elegir cualquier punto de venta activo.';
   tipo.disabled = solicitudRegistrada;
   guardar.textContent = fiscal ? 'Guardar Factura C' : 'Guardar Factura B';
 }
@@ -141,6 +144,7 @@ document.getElementById('editar').addEventListener('click', () => {
   actualizar();
 });
 actualizar();
+if (vista === 'C') punto.value = 'local';
 if (vista === 'guardada') abrirComprobantes();
 </script>
 </body>

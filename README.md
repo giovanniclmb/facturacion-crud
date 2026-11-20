@@ -26,7 +26,7 @@ para el punto de venta exclusivo configurado.
 ## Alta, edición e impresión
 
 - **Factura C** exige un cliente del padrón. Una vez guardada, marcar la confirmación del CUIT y pulsar **Informar a ARCA** desde Comprobantes. Un rechazo conserva la factura editable y el motivo. Si el resultado es incierto, usar **Consultar ARCA**.
-- **Factura B - Consumidor Final** genera un comprobante interno sin cliente ni CAE. Se puede convertir a Factura C y elegir un punto de homologación. La conversión de C a B está disponible antes del primer intento fiscal registrado. En las ediciones se recalculan los ítems a precio vigente.
+- **Factura B - Consumidor Final** genera un comprobante interno sin cliente ni CAE. Se puede convertir a Factura C y elegir un punto de homologación. La conversión de C a B está disponible antes del primer intento fiscal registrado y permite elegir un punto activo. En las ediciones se recalculan los ítems a precio vigente.
 - La lista **General** se selecciona inicialmente. Si falta un precio en la lista elegida, se muestra el de General con su origen. Las listas de demostración se cargan con [precios_mayorista.sql](db/demo/precios_mayorista.sql) y luego [precios_costo.sql](db/demo/precios_costo.sql).
 - **Comprobantes registrados** ordena por fecha de emisión descendente. El selector, el desempate por ID y el orden se aplican también a PDF y Excel. **Ver comprobante** abre el PDF individual en todas las filas. Cuando la autorización no está confirmada, el PDF se identifica como copia sin validez fiscal. **Estado de ARCA** muestra el último estado registrado de cada comprobante.
 

@@ -358,9 +358,8 @@ public class FacturaService {
                     && intentosArca.existsByFacturaId(id)) {
                 throw new ReglaNegocioException("El tipo no puede cambiarse después de solicitar una autorización fiscal");
             }
-            if (factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL
-                    && request.getTipoComprobante() == TipoComprobante.FACTURA_C) {
-                asignarPuntoAlConvertir(factura, request.getPuntoVentaId());
+            if (factura.getTipoComprobante() != null && factura.getTipoComprobante() != request.getTipoComprobante()) {
+                asignarPuntoAlConvertir(factura, request.getPuntoVentaId(), request.getTipoComprobante());
             }
             factura.setTipoComprobante(request.getTipoComprobante());
             asignarReceptor(factura, request);
@@ -435,18 +434,22 @@ public class FacturaService {
 
     // ======================= AUXILIARES =======================
 
-    private void asignarPuntoAlConvertir(FacturaVenta factura, Long puntoSolicitado) {
-        Long puntoActual = factura.getPuntoVenta().getId();
-        Long puntoDestino = puntoSolicitado == null ? puntoActual : puntoSolicitado;
-        if (puntosVentaHomologacion().stream().noneMatch(punto -> punto.getId().equals(puntoDestino))) {
+    private void asignarPuntoAlConvertir(FacturaVenta factura, Long puntoSolicitado, TipoComprobante tipoDestino) {
+        PuntoVenta puntoActual = factura.getPuntoVenta();
+        Long puntoDestino = puntoSolicitado == null ? puntoActual.getId() : puntoSolicitado;
+        if (tipoDestino == TipoComprobante.FACTURA_C
+                && puntosVentaHomologacion().stream().noneMatch(punto -> punto.getId().equals(puntoDestino))) {
             throw new ReglaNegocioException("Seleccione un punto de venta habilitado para homologación");
         }
-        if (!puntoDestino.equals(puntoActual)) {
-            var punto = puntoVentaRepository.buscarBloqueado(puntoDestino)
-                    .orElseThrow(() -> new RecursoNoEncontradoException("No existe el punto de venta seleccionado"));
-            if (punto.getFechaBaja() != null) {
-                throw new ReglaNegocioException("El punto de venta seleccionado está dado de baja");
-            }
+
+        boolean cambiaPunto = !puntoDestino.equals(puntoActual.getId());
+        PuntoVenta punto = cambiaPunto ? puntoVentaRepository.buscarBloqueado(puntoDestino)
+                .orElseThrow(() -> new RecursoNoEncontradoException("No existe el punto de venta seleccionado"))
+                : puntoActual;
+        if (punto.getFechaBaja() != null) {
+            throw new ReglaNegocioException("El punto de venta seleccionado está dado de baja");
+        }
+        if (cambiaPunto) {
             factura.setNumero(facturaVentaRepository.ultimoNumeroPorPuntoVenta(puntoDestino) + 1);
             factura.setPuntoVenta(punto);
         }

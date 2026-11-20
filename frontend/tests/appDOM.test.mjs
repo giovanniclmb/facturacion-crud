@@ -244,3 +244,42 @@ test('editar una B permite guardarla como C sin solicitar CAE', async t => {
     assert.equal(datos.revision, 2);
     assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
 });
+
+test('editar una C permite elegir otro punto de venta al convertirla a B', async t => {
+    const fiscal = { ...factura, tipoComprobante: 'FACTURA_C', puedeModificar: true };
+    const app = await montar({ resolver: llamada => {
+        const url = new URL(llamada.url);
+        if (url.pathname.endsWith('/facturas') && llamada.method === 'GET') return respuesta(pagina([fiscal]));
+        if (url.pathname.endsWith('/1/detalle')) return respuesta({
+            id: 1, revision: 2, tipoComprobante: 'FACTURA_C', puedeModificar: true, puedeCambiarTipo: true,
+            puntoVentaId: 2, puntosVentaHomologacion: [],
+            clienteId: 1, clienteDenominacion: 'Ana', clienteCuit: '30000000007',
+            condicionIvaId: 1, tipoMonedaId: 1, listaPrecioId: 1, fechaEmision: '2026-11-20',
+            detalles: [{ ...precio, listaPrecioArticuloId: precio.id, cantidad: 1, porcentajeBonificacion: 0 }]
+        });
+        if (url.pathname.endsWith('/listas-precio-articulos/precio')) return respuesta(precio);
+        if (url.pathname.endsWith('/puntos-venta')) return respuesta([...opcion, { id: 2, descripcion: 'Homologación' }]);
+        if (llamada.method === 'PUT') return respuesta({ ...fiscal, tipoComprobante: 'CONSUMIDOR_FINAL' });
+    } });
+    t.after(() => app.cerrar());
+    [...app.document.querySelectorAll('button')].find(boton => boton.textContent === 'Editar').click();
+    await flush();
+    const tipo = porId(app, 'alta-tipo');
+    const punto = porId(app, 'alta-punto-venta');
+    assert.equal(punto.disabled, true);
+    tipo.value = 'CONSUMIDOR_FINAL';
+    tipo.dispatchEvent(new app.window.Event('change'));
+    assert.equal(punto.disabled, false);
+    punto.value = '1';
+    assert.equal(porId(app, 'alta-campo-cliente').hidden, true);
+    submit(app, 'form-alta');
+    await flush();
+
+    const put = app.llamados.find(llamada => llamada.method === 'PUT');
+    assert.ok(put);
+    const datos = JSON.parse(put.opciones.body);
+    assert.equal(datos.tipoComprobante, 'CONSUMIDOR_FINAL');
+    assert.equal(datos.puntoVentaId, 1);
+    assert.equal(datos.clienteId, undefined);
+    assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
+});

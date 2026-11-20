@@ -103,7 +103,7 @@ const catalogosEstado = elemento<HTMLParagraphElement>('catalogos-estado');
 const btnReintentarCatalogos = elemento<HTMLButtonElement>('btn-reintentar-catalogos');
 const altaTipo = elemento<HTMLSelectElement>('alta-tipo');
 const altaLista = elemento<HTMLSelectElement>('alta-lista-precio');
-const ayudaPuntoFiscal = elemento<HTMLElement>('alta-ayuda-punto-fiscal');
+const ayudaPuntoVenta = elemento<HTMLElement>('alta-ayuda-punto-venta');
 const panelAlta = elemento<HTMLDetailsElement>('panel-alta');
 const tituloFormulario = elemento<HTMLSpanElement>('titulo-formulario');
 const altaRechazo = elemento<HTMLDivElement>('alta-rechazo');
@@ -460,22 +460,27 @@ function sincronizarTipo(): void {
         elemento(id).hidden = esInterno();
     }
     btnCrear.textContent = esInterno() ? 'Guardar Factura B' : 'Guardar Factura C';
-    ayudaPuntoFiscal.hidden = true;
+    ayudaPuntoVenta.hidden = true;
     if (!edicion) return;
 
-    const convirtiendo = edicion.tipoOriginal === 'CONSUMIDOR_FINAL' && !esInterno();
-    const puntosFiscales = edicion.puntosVentaHomologacion;
-    const permiteElegirPunto = convirtiendo && puntosFiscales.length > 0;
+    const aFacturaC = edicion.tipoOriginal === 'CONSUMIDOR_FINAL' && !esInterno();
+    const aFacturaB = edicion.tipoOriginal === 'FACTURA_C' && esInterno();
+    const convirtiendo = aFacturaC || aFacturaB;
+    const opciones = aFacturaC ? edicion.puntosVentaHomologacion : puntosVentaCatalogo;
     const puntoElegido = idSeleccionado(altaPuntoVenta) ?? edicion.puntoOriginal;
-    llenarSelect(altaPuntoVenta, permiteElegirPunto ? puntosFiscales : puntosVentaCatalogo, 'Seleccione…');
-    altaPuntoVenta.value = permiteElegirPunto
-        ? (puntosFiscales.some(punto => punto.id === puntoElegido) ? String(puntoElegido) : '')
+    llenarSelect(altaPuntoVenta, opciones, 'Seleccione…');
+    altaPuntoVenta.value = convirtiendo
+        ? (opciones.some(punto => punto.id === puntoElegido) ? String(puntoElegido) : '')
         : String(edicion.puntoOriginal);
-    altaPuntoVenta.disabled = !permiteElegirPunto;
-    ayudaPuntoFiscal.hidden = !convirtiendo;
-    ayudaPuntoFiscal.textContent = permiteElegirPunto
-        ? 'Seleccioná un punto habilitado para homologación.'
-        : 'Configurá un punto habilitado para poder homologar.';
+    altaPuntoVenta.disabled = !convirtiendo || opciones.length === 0;
+    ayudaPuntoVenta.hidden = !convirtiendo;
+    if (aFacturaB) {
+        ayudaPuntoVenta.textContent = 'Podés elegir cualquier punto de venta activo.';
+    } else if (aFacturaC) {
+        ayudaPuntoVenta.textContent = opciones.length > 0
+            ? 'Seleccioná un punto habilitado para homologación.'
+            : 'Configurá un punto habilitado para poder homologar.';
+    }
 }
 
 async function recotizarItems(): Promise<void> {

@@ -155,10 +155,26 @@ class FacturaCrudConsignasTests {
                 .andExpect(jsonPath("$.estado").value("PENDIENTE"));
         assertEquals(2L, jdbc.queryForObject("SELECT punto_venta_id FROM factura_venta WHERE id=100", Long.class));
 
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON)
+                .content(alta("[{\"articuloId\":1,\"cantidad\":1}]")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.numeroFactura").value(1));
+
         long revision = jdbc.queryForObject("SELECT revision FROM factura_venta WHERE id=100", Long.class);
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
-                .content(edicion("CONSUMIDOR_FINAL", 2, revision, "")))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"));
+                .content(edicion("FACTURA_C", 1, revision, ",\"clienteId\":2,\"condicionIvaId\":1")))
+                .andExpect(status().isConflict());
+
+        jdbc.update("UPDATE punto_venta SET fechaBaja = CURRENT_TIMESTAMP WHERE id = 1");
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("CONSUMIDOR_FINAL", 1, revision, "")))
+                .andExpect(status().isConflict());
+        jdbc.update("UPDATE punto_venta SET fechaBaja = NULL WHERE id = 1");
+
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("CONSUMIDOR_FINAL", 1, revision, "")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"))
+                .andExpect(jsonPath("$.id").value(100)).andExpect(jsonPath("$.numeroFactura").value(2));
+        assertEquals(1L, jdbc.queryForObject("SELECT punto_venta_id FROM factura_venta WHERE id=100", Long.class));
         assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
         assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM arca_intento", Integer.class));
     }
