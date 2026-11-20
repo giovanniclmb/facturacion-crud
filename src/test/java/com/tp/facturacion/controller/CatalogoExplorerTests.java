@@ -78,6 +78,14 @@ class CatalogoExplorerTests {
                 .andExpect(jsonPath("$.totalElementos").value(3)).andExpect(jsonPath("$.totalPaginas").value(3));
     }
 
+    @Test
+    void selectorDeFacturaCExcluyeDocumentosInvalidosAntesDePaginar() throws Exception {
+        jdbc.update("UPDATE cliente SET cuitCuil='30000000007' WHERE id IN (2,4)");
+        mvc.perform(get("/api/catalogos/clientes/explorer").param("soloFacturaC", "true").param("tamanio", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.contenido[*].id", contains(2)))
+                .andExpect(jsonPath("$.totalElementos").value(1));
+    }
+
     @ParameterizedTest
     @CsvSource({"ana,2", "20222,1", "%,1", "_,1", "inexistente,0"})
     void buscaClientesPorNombreODocumentoLiteral(String termino, int total) throws Exception {

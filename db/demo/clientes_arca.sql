@@ -1,4 +1,4 @@
--- Receptores de prueba para ARCA homologación. Ambos usan el CUIT del ejemplo de WSFEv1.
+-- Receptores de prueba para ARCA homologación. Usan el CUIT del ejemplo de WSFEv1.
 BEGIN;
 
 LOCK TABLE cliente IN SHARE ROW EXCLUSIVE MODE;
@@ -9,9 +9,16 @@ DECLARE
     nombre_demo varchar;
     contacto_demo bigint;
     domicilio_demo bigint;
+    otros_ficticios CONSTANT varchar[] := ARRAY['Distribuidora Mendoza SA', 'Juan Lopez', 'Maria Gomez'];
 BEGIN
-    FOREACH nombre_demo IN ARRAY ARRAY['Cliente demostración ARCA', 'Giovanni Colombo (demo)']
+    FOREACH nombre_demo IN ARRAY ARRAY['Cliente demostración ARCA', 'Giovanni Colombo (demo)'] || otros_ficticios
     LOOP
+        -- Una coincidencia de nombre en una base existente puede ser un cliente real.
+        IF nombre_demo = ANY(otros_ficticios)
+                AND EXISTS (SELECT 1 FROM cliente WHERE denominacion = nombre_demo) THEN
+            CONTINUE;
+        END IF;
+
         IF EXISTS (
             SELECT 1 FROM cliente
             WHERE denominacion = nombre_demo

@@ -220,6 +220,7 @@ conceptual DocTipo99/0 no se implementa como fallback para documentos inválidos
    ```sh
    psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/demo/clientes_arca.sql
    psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/demo/precios_mayorista.sql
+   psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/demo/precios_costo.sql
    ```
 
 3. Configurar en ese equipo la conexión WSASS de homologación con su certificado, clave y autorización. Cargar en `punto_venta` el número fiscal habilitado y declararlo en `arca.puntos-venta-exclusivos` si queda reservado a esta aplicación. El `99001` se usó con el emisor de la demostración original.

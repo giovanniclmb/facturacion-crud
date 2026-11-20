@@ -101,6 +101,12 @@ class FacturaCrudConsignasTests {
         try (var lector = new org.openpdf.text.pdf.PdfReader(pdf)) {
             String texto = new org.openpdf.text.pdf.parser.PdfTextExtractor(lector).getTextFromPage(1);
             assertTrue(texto.contains("Factura B - Consumidor Final"));
+            assertTrue(texto.contains("Emisor"));
+            assertTrue(texto.contains("Receptor"));
+            assertTrue(texto.contains("Subtotal: $ 201,00"));
+            assertTrue(texto.contains("Total: $ 201,00"));
+            assertEquals(org.openpdf.text.PageSize.A4.getWidth(), lector.getPageSize(1).getWidth(), 1f);
+            assertFalse(texto.contains("PES"));
             assertTrue(texto.contains("sin validez fiscal"));
         }
     }

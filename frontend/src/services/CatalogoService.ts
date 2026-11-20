@@ -26,8 +26,8 @@ export class CatalogoService {
         return pedir<ArticuloOpcionDTO[]>(`${this.baseUrl}/articulos`);
     }
 
-    buscarClientes(busqueda = '', pagina = 0): Promise<PaginaDTO<ClienteExplorerDTO>> {
-        return pedir(`${this.baseUrl}/clientes/explorer${construirQueryString({busqueda, pagina, tamanio: 10})}`);
+    buscarClientes(busqueda = '', pagina = 0, soloFacturaC?: boolean): Promise<PaginaDTO<ClienteExplorerDTO>> {
+        return pedir(`${this.baseUrl}/clientes/explorer${construirQueryString({busqueda, pagina, tamanio: 10, soloFacturaC})}`);
     }
 
     obtenerListasPrecio(): Promise<OpcionDTO[]> {

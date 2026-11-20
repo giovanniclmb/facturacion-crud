@@ -6,3 +6,4 @@
 \ir ../demo/catalogos_base.sql
 \ir ../demo/clientes_arca.sql
 \ir ../demo/precios_mayorista.sql
+\ir ../demo/precios_costo.sql

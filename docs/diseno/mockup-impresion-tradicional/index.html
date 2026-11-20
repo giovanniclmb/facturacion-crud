@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vista previa de impresión</title>
+    <link rel="stylesheet" href="../../../design-system/tokens.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--fondo); color: var(--tinta); font: 16px/1.45 var(--fuente); }
+        main { width: min(calc(100% - 2rem), 800px); margin: 1.5rem auto; }
+        nav { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+        nav a { padding: .6rem .8rem; border: 1px solid var(--accion); color: var(--accion); border-radius: var(--radio-control); text-decoration: none; }
+        nav a[aria-current] { background: var(--accion); color: white; }
+        article { background: white; border: 1px solid #a9b2be; color: #18212d; }
+        .leyenda { text-align: center; padding: .5rem; margin: 0; background: var(--suave); border-bottom: 1px solid #a9b2be; font-size: .8125rem; font-weight: 700; }
+        header { display: grid; grid-template-columns: 1fr auto 1fr; align-items: start; gap: 1rem; padding: 1.5rem; border-bottom: 1px solid #a9b2be; }
+        h1, h2, p { margin: 0; }
+        h1 { font-size: 1.35rem; line-height: 1.2; }
+        h2 { font-size: .9375rem; }
+        .letra { justify-self: center; border: 1px solid #18212d; height: 3rem; width: 3rem; display: grid; place-items: center; font-size: 1.8rem; font-weight: 750; }
+        .factura { text-align: right; }
+        .factura strong { display: block; margin-block: .4rem .2rem; }
+        .datos, footer { padding: 1.1rem 1.5rem; }
+        .datos { border-bottom: 1px solid #a9b2be; }
+        .datos p, header p { color: #555f6c; font-size: .875rem; margin-top: .2rem; }
+        .detalle { padding: 1.5rem; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: .55rem; border-bottom: 1px solid #c5ccd5; }
+        th { background: var(--suave); font-size: .8125rem; }
+        .numero { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .totales { margin: 1.25rem 0 0 auto; max-width: 18rem; border: 1px solid #a9b2be; padding: .65rem .8rem; }
+        .totales p { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+        .total { margin-top: .45rem; padding-top: .45rem; border-top: 1px solid #a9b2be; font-weight: 700; }
+        .total strong { font-size: 1.2rem; }
+        footer { display: flex; gap: .85rem; align-items: center; border-top: 1px solid #a9b2be; font-size: .875rem; }
+        .qr { display: grid; place-items: center; width: 4.5rem; height: 4.5rem; border: 1px dashed #68788a; text-align: center; font-size: .75rem; }
+        .compacta header, .compacta .detalle { padding: .8rem 1rem; }
+        .compacta .datos, .compacta footer { padding: .65rem 1rem; }
+        .compacta th, .compacta td { padding-block: .35rem; }
+        @media (max-width: 520px) {
+            header { grid-template-columns: 1fr auto; padding: 1rem; gap: .6rem; }
+            .letra { grid-column: 2; grid-row: 1; }
+            .factura { grid-column: 1 / -1; text-align: left; }
+            .datos, .detalle, footer { padding: .75rem; }
+            th, td { padding: .35rem .2rem; font-size: .75rem; }
+        }
+        @page { size: A4; margin: 12mm; }
+        @media print { body { background: white; } main { width: 100%; margin: 0; } nav { display: none; } }
+    </style>
+</head>
+<body>
+<main>
+    <nav aria-label="Opciones de formato">
+        <a href="?" id="tradicional">A4 tradicional</a>
+        <a href="?formato=compacta" id="compacta">A4 compacto</a>
+    </nav>
+    <article id="hoja">
+        <p class="leyenda">HOMOLOGACIÓN · DATOS DE EJEMPLO</p>
+        <header>
+            <div><h2>Emisor de ejemplo</h2><p>Domicilio comercial de ejemplo</p><p>CUIT: de demostración</p></div>
+            <div class="letra" aria-label="Clase C">C</div>
+            <div class="factura"><h1>Factura C</h1><strong>99001-00000018</strong><p>19/11/2026</p></div>
+        </header>
+        <div class="datos"><h2>Receptor</h2><p>Cliente de ejemplo · Responsable Inscripto</p></div>
+        <div class="detalle">
+            <table aria-label="Detalle de la operación">
+                <thead><tr><th>Artículo</th><th class="numero">Cant.</th><th class="numero">Precio unit.</th><th class="numero">Subtotal</th></tr></thead>
+                <tbody><tr><td>Cuaderno</td><td class="numero">2</td><td class="numero">$ 4.500,00</td><td class="numero">$ 9.000,00</td></tr>
+                <tr><td>Carpeta</td><td class="numero">1</td><td class="numero">$ 6.700,00</td><td class="numero">$ 6.700,00</td></tr></tbody>
+            </table>
+            <div class="totales"><p>Subtotal <span>$ 15.700,00</span></p><p class="total">Total <strong>$ 15.700,00</strong></p></div>
+        </div>
+        <footer><div class="qr">QR de ejemplo</div><div><strong>CAE de ejemplo</strong><p>Vencimiento del CAE</p></div></footer>
+    </article>
+</main>
+<script>
+    const compacta = new URLSearchParams(location.search).get('formato') === 'compacta';
+    document.querySelector('#hoja').classList.toggle('compacta', compacta);
+    document.getElementById(compacta ? 'compacta' : 'tradicional').setAttribute('aria-current', 'page');
+</script>
+</body>
+</html>

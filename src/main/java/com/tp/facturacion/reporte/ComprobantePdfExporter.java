@@ -12,6 +12,7 @@ import com.tp.facturacion.model.TipoComprobante;
 import com.tp.facturacion.repository.FacturaVentaRepository;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -24,6 +25,7 @@ import java.util.Locale;
 import org.openpdf.text.Document;
 import org.openpdf.text.Element;
 import org.openpdf.text.FontFactory;
+import org.openpdf.text.Rectangle;
 import org.openpdf.text.Image;
 import org.openpdf.text.PageSize;
 import org.openpdf.text.Paragraph;
@@ -39,6 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class ComprobantePdfExporter {
     private static final DateTimeFormatter FECHA = DateTimeFormatter.ofPattern("dd/MM/uuuu")
             .withZone(ZoneId.of("America/Argentina/Mendoza"));
+
+    private static final Color BORDE = new Color(169, 178, 190);
+    private static final Color FONDO_CLARO = new Color(243, 245, 248);
 
     private final FacturaVentaRepository facturas;
     private final IntentoArcaRepository intentos;
@@ -67,63 +72,132 @@ public class ComprobantePdfExporter {
         PdfWriter.getInstance(pdf, salida);
         pdf.open();
         try {
-            String numero = fiscal == null ? "N.º local " + (factura.getNumero() == null ? id : factura.getNumero())
-                    : String.format(Locale.ROOT,
-                    "%05d-%08d", fiscal.getSerie().getPuntoVenta(), fiscal.getNumero());
-            pdf.add(new Paragraph((interno ? "Factura B - Consumidor Final" : "Factura C") + " · " + numero,
-                    FontFactory.getFont(FontFactory.HELVETICA_BOLD, 17)));
-            if (fiscal != null) {
-                pdf.add(new Paragraph("Homologación · comprobante de prueba"));
-            } else {
-                pdf.add(new Paragraph((interno ? "Comprobante interno" : "Copia interna") + " · sin validez fiscal"));
-                pdf.add(new Paragraph("Estado de ARCA: " + estadoSinAutorizacion(factura, ultimo, interno)));
-                if (factura.getMotivoRechazo() != null && !factura.getMotivoRechazo().isBlank()) {
-                    pdf.add(new Paragraph("Motivo: " + factura.getMotivoRechazo()));
-                }
-            }
-            if ("ANULADA".equals(factura.getEstado())) pdf.add(new Paragraph("Estado del comprobante: Anulado"));
-            pdf.add(new Paragraph("Fecha de emisión: " + FECHA.format(
-                    Instant.ofEpochMilli(factura.getFechaEmision().getTime()))));
-            if (!emisor.isBlank()) pdf.add(new Paragraph("Emisor: " + emisor));
-            if (!domicilio.isBlank()) pdf.add(new Paragraph("Domicilio: " + domicilio));
-            if (fiscal != null) pdf.add(new Paragraph("CUIT emisor: " + fiscal.getSerie().getEmisor()));
-            var cliente = factura.getCliente();
-            String receptor = cliente == null ? "Consumidor final" : cliente.getDenominacion();
-            if (fiscal != null) receptor += " · CUIT " + fiscal.getDocNumero();
-            pdf.add(new Paragraph("Receptor: " + receptor));
-            pdf.add(new Paragraph("Condición de IVA: " + factura.getCondicionIva().getDenominacion()));
+            pdf.add(cabecera(factura, fiscal, interno));
+            pdf.add(receptor(factura, fiscal, ultimo, interno));
 
             var importes = NumberFormat.getNumberInstance(Locale.forLanguageTag("es-AR"));
             importes.setMinimumFractionDigits(2);
             importes.setMaximumFractionDigits(2);
-            String moneda = factura.getMoneda().getCodigoAfip() + " ";
+            String codigoMoneda = factura.getMoneda().getCodigoAfip();
+            String moneda = "PES".equals(codigoMoneda) ? "$ " : codigoMoneda + " ";
             var tabla = new PdfPTable(new float[]{4, 1, 1.6f, 1.2f, 1.7f});
             tabla.setWidthPercentage(100);
-            tabla.setSpacingBefore(16);
+            tabla.setSpacingBefore(15);
             tabla.setHeaderRows(1);
-            for (String titulo : new String[]{"Artículo", "Cant.", "Precio unit.", "Bonif. %", "Subtotal"}) {
-                var celda = celda(titulo, false);
-                celda.setBackgroundColor(new Color(236, 240, 245));
-                tabla.addCell(celda);
+            String[] columnas = {"Artículo", "Cant.", "Precio unit.", "Bonif. %", "Subtotal"};
+            for (int i = 0; i < columnas.length; i++) {
+                var titulo = celda(columnas[i], i != 0, true, 9);
+                titulo.setBackgroundColor(FONDO_CLARO);
+                tabla.addCell(titulo);
             }
+            BigDecimal subtotal = BigDecimal.ZERO;
             for (var item : factura.getDetalles().stream().sorted(Comparator.comparing(FacturaVentaDetalle::getId)).toList()) {
                 tabla.addCell(celda(item.getDescripcion(), false));
                 tabla.addCell(celda(importes.format(item.getCantidad()), true));
-                tabla.addCell(celda(importes.format(item.getPrecioUnitario()), true));
+                tabla.addCell(celda(moneda + importes.format(item.getPrecioUnitario()), true));
                 tabla.addCell(celda(importes.format(item.getPorcentajeBonificacion()), true));
-                tabla.addCell(celda(importes.format(item.getImporteSubtotal()), true));
+                tabla.addCell(celda(moneda + importes.format(item.getImporteSubtotal()), true));
+                subtotal = subtotal.add(BigDecimal.valueOf(item.getImporteSubtotal()));
             }
             pdf.add(tabla);
-            var total = new Paragraph("Total: " + moneda + importes.format(factura.getImporteTotal()),
-                    FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13));
-            total.setAlignment(Element.ALIGN_RIGHT);
-            total.setSpacingBefore(8);
-            pdf.add(total);
+            pdf.add(totales(moneda + importes.format(subtotal),
+                    moneda + importes.format(factura.getImporteTotal())));
             if (fiscal != null) pdf.add(autorizacion(fiscal));
         } finally {
             pdf.close();
         }
         return salida.toByteArray();
+    }
+
+    private PdfPTable cabecera(FacturaVenta factura, IntentoArca fiscal, boolean interno) {
+        var tabla = new PdfPTable(new float[]{4, 1, 4});
+        tabla.setWidthPercentage(100);
+        tabla.setKeepTogether(true);
+
+        var leyenda = celda(fiscal != null ? "Homologación · comprobante de prueba"
+                : (interno ? "Comprobante interno" : "Copia interna") + " · sin validez fiscal", false, true, 10);
+        leyenda.setColspan(3);
+        leyenda.setHorizontalAlignment(Element.ALIGN_CENTER);
+        leyenda.setBackgroundColor(FONDO_CLARO);
+        tabla.addCell(leyenda);
+
+        var datosEmisor = bloque("Emisor");
+        agregarLinea(datosEmisor, emisor, false);
+        agregarLinea(datosEmisor, domicilio.isBlank() ? "" : "Domicilio: " + domicilio, false);
+        if (fiscal != null) agregarLinea(datosEmisor, "CUIT emisor: " + fiscal.getSerie().getEmisor(), false);
+        tabla.addCell(datosEmisor);
+
+        var letra = celda(interno ? "B" : "C", false, true, 25);
+        letra.setHorizontalAlignment(Element.ALIGN_CENTER);
+        letra.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        tabla.addCell(letra);
+
+        String numero = fiscal == null
+                ? "N.º local " + (factura.getNumero() == null ? factura.getId() : factura.getNumero())
+                : String.format(Locale.ROOT, "%05d-%08d", fiscal.getSerie().getPuntoVenta(), fiscal.getNumero());
+        var identificacion = bloque(interno ? "Factura B - Consumidor Final" : "Factura C", true);
+        agregarLinea(identificacion, numero, true);
+        agregarLinea(identificacion, "Fecha de emisión: " + FECHA.format(
+                Instant.ofEpochMilli(factura.getFechaEmision().getTime())), true);
+        tabla.addCell(identificacion);
+        return tabla;
+    }
+
+    private PdfPTable receptor(FacturaVenta factura, IntentoArca fiscal, IntentoArca ultimo, boolean interno) {
+        var tabla = new PdfPTable(1);
+        tabla.setWidthPercentage(100);
+        tabla.setKeepTogether(true);
+
+        var bloque = bloque("Receptor");
+        var cliente = factura.getCliente();
+        String denominacion = cliente == null ? "Consumidor final" : cliente.getDenominacion();
+        if (fiscal != null) denominacion += " · CUIT " + fiscal.getDocNumero();
+        agregarLinea(bloque, denominacion, false);
+        agregarLinea(bloque, "Condición de IVA: " + factura.getCondicionIva().getDenominacion(), false);
+        if (fiscal == null) {
+            agregarLinea(bloque, "Estado de ARCA: " + estadoSinAutorizacion(factura, ultimo, interno), false);
+            if (factura.getMotivoRechazo() != null && !factura.getMotivoRechazo().isBlank()) {
+                agregarLinea(bloque, "Motivo: " + factura.getMotivoRechazo(), false);
+            }
+        }
+        if ("ANULADA".equals(factura.getEstado())) agregarLinea(bloque, "Estado del comprobante: Anulado", false);
+        tabla.addCell(bloque);
+        return tabla;
+    }
+
+    private PdfPTable totales(String subtotal, String total) {
+        var tabla = new PdfPTable(1);
+        tabla.setWidthPercentage(42);
+        tabla.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        tabla.setSpacingBefore(13);
+        tabla.setKeepTogether(true);
+        tabla.addCell(celda("Subtotal: " + subtotal, true));
+        var destacado = celda("Total: " + total, true, true, 14);
+        destacado.setBackgroundColor(FONDO_CLARO);
+        tabla.addCell(destacado);
+        return tabla;
+    }
+
+    private PdfPCell bloque(String titulo) {
+        return bloque(titulo, false);
+    }
+
+    private PdfPCell bloque(String titulo, boolean derecha) {
+        var bloque = new PdfPCell();
+        bloque.setPadding(12);
+        bloque.setBorderColor(BORDE);
+        var encabezado = new Paragraph(titulo, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12));
+        encabezado.setAlignment(derecha ? Element.ALIGN_RIGHT : Element.ALIGN_LEFT);
+        bloque.addElement(encabezado);
+        return bloque;
+    }
+
+    private void agregarLinea(PdfPCell bloque, String texto, boolean derecha) {
+        if (texto.isBlank()) return;
+        var parrafo = new Paragraph(texto, FontFactory.getFont(FontFactory.HELVETICA, 10));
+        parrafo.setSpacingBefore(3);
+        parrafo.setAlignment(derecha ? Element.ALIGN_RIGHT : Element.ALIGN_LEFT);
+        bloque.addElement(parrafo);
     }
 
     private boolean tieneAutorizacion(FacturaVenta factura, IntentoArca intento) {
@@ -151,10 +225,12 @@ public class ComprobantePdfExporter {
         tabla.setKeepTogether(true);
         tabla.setSpacingBefore(15);
         var imagen = new PdfPCell(imagenQr(urlQr(fiscal)));
-        imagen.setBorder(org.openpdf.text.Rectangle.NO_BORDER);
+        imagen.setBorder(Rectangle.TOP);
+        imagen.setBorderColor(BORDE);
+        imagen.setPaddingTop(10);
         tabla.addCell(imagen);
         var texto = celda("CAE: " + fiscal.getCae() + "\nVencimiento: " + FECHA.format(fiscal.getVencimiento()), false);
-        texto.setBorder(org.openpdf.text.Rectangle.NO_BORDER);
+        texto.setBorder(Rectangle.TOP);
         texto.setVerticalAlignment(Element.ALIGN_MIDDLE);
         tabla.addCell(texto);
         return tabla;
@@ -191,8 +267,14 @@ public class ComprobantePdfExporter {
     }
 
     private PdfPCell celda(String texto, boolean numero) {
-        var celda = new PdfPCell(new Phrase(texto == null ? "" : texto));
-        celda.setPadding(6);
+        return celda(texto, numero, false, 10);
+    }
+
+    private PdfPCell celda(String texto, boolean numero, boolean negrita, int tamanio) {
+        var fuente = FontFactory.getFont(negrita ? FontFactory.HELVETICA_BOLD : FontFactory.HELVETICA, tamanio);
+        var celda = new PdfPCell(new Phrase(texto == null ? "" : texto, fuente));
+        celda.setBorderColor(BORDE);
+        celda.setPadding(7);
         celda.setHorizontalAlignment(numero ? Element.ALIGN_RIGHT : Element.ALIGN_LEFT);
         return celda;
     }

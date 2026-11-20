@@ -37,8 +37,9 @@ public class CatalogoExplorerController {
 
     @GetMapping("/clientes/explorer")
     public PaginaDto<ClienteExplorerDto> clientes(@RequestParam(defaultValue = "") String busqueda,
+                                                 @RequestParam(defaultValue = "false") boolean soloFacturaC,
                                                  @Valid @ModelAttribute PaginacionDto paginacion) {
-        return service.clientes(busqueda, paginacion);
+        return service.clientes(busqueda, paginacion, soloFacturaC);
     }
 
     @GetMapping("/listas-precio-articulos/explorer")

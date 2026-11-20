@@ -128,6 +128,7 @@ const btnPaginaSiguiente = elemento<HTMLButtonElement>('btn-pagina-siguiente');
 
 const formatoMoneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' });
 
+let soloReceptoresFacturaC = false;
 const explorerClientes = new Explorer<ClienteExplorerDTO>({
     id: 'explorer-clientes',
     titulo: 'Buscar cliente',
@@ -137,7 +138,7 @@ const explorerClientes = new Explorer<ClienteExplorerDTO>({
         { titulo: 'CUIT/CUIL', valor: c => c.cuitCuil }
     ],
     describir: c => `${c.denominacion}, CUIT/CUIL ${c.cuitCuil}`,
-    buscar: (texto, pagina) => catalogoService.buscarClientes(texto, pagina)
+    buscar: (texto, pagina) => catalogoService.buscarClientes(texto, pagina, soloReceptoresFacturaC || undefined)
 });
 
 const listaExplorer = crearElemento('select', 'form-select');
@@ -922,7 +923,13 @@ btnCancelarEdicion.addEventListener('click', () => {
 });
 btnAgregarItem.addEventListener('click', agregarItem);
 btnAltaCliente.addEventListener('click', async () => {
-    const cliente = await explorerClientes.abrir();
+    soloReceptoresFacturaC = true;
+    let cliente: ClienteExplorerDTO | null;
+    try {
+        cliente = await explorerClientes.abrir();
+    } finally {
+        soloReceptoresFacturaC = false;
+    }
     if (cliente) {
         clienteAlta = cliente;
         confirmarCuit.checked = false;

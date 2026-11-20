@@ -27,7 +27,7 @@ punto de venta exclusivo configurado. Los comprobantes internos se guardan por s
 
 - **Factura C** exige un cliente del padrón y confirmación del CUIT. El guardado solicita CAE en homologación. Un rechazo conserva la factura editable y el motivo. Si el resultado es incierto, usar **Consultar ARCA** desde la grilla.
 - **Factura B - Consumidor Final** genera un comprobante interno sin cliente ni CAE. Las facturas pendientes o rechazadas se pueden editar. El punto de venta permanece fijo y se recalculan los ítems a precio vigente.
-- La lista **General** se selecciona inicialmente. Si falta un precio en la lista elegida, se muestra el de General con su origen. Para cargar ejemplos Mayorista en una base de demostración, usar [precios_mayorista.sql](db/demo/precios_mayorista.sql).
+- La lista **General** se selecciona inicialmente. Si falta un precio en la lista elegida, se muestra el de General con su origen. Las listas de demostración se cargan con [precios_mayorista.sql](db/demo/precios_mayorista.sql) y luego [precios_costo.sql](db/demo/precios_costo.sql).
 - **Comprobantes registrados** ordena por fecha de emisión descendente. El selector, el desempate por ID y el orden se aplican también a PDF y Excel. **Ver comprobante** abre el PDF individual en todas las filas. Cuando la autorización no está confirmada, el PDF se identifica como copia sin validez fiscal. **Estado de ARCA** muestra el último estado registrado de cada comprobante.
 
 En una base existente, aplicar después de la migración ARCA:
@@ -235,7 +235,7 @@ createdb facturacion_crud
 psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/bootstrap/demo_local.sql
 ```
 
-El script prepara una **base vacía** con el esquema, las dos migraciones, los catálogos de ejemplo y los clientes de demostración. Para una base existente, aplicar únicamente las migraciones que le falten. Hibernate usa `ddl-auto=validate`.
+El script prepara una **base vacía** con el esquema, las dos migraciones, las listas General, Mayorista y Costo, y los cinco clientes de demostración. Para una base existente, aplicar únicamente las migraciones que le falten. Hibernate usa `ddl-auto=validate`.
 
 El backend usa `jdbc:postgresql://localhost:5432/facturacion_crud` y toma el usuario de `PGUSER` o del usuario del sistema. Si PostgreSQL usa otro usuario, URL o contraseña, definir `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_URL` y `SPRING_DATASOURCE_PASSWORD` en la terminal del backend según corresponda.
 

@@ -52,7 +52,7 @@ public class SnapshotFiscalFactory {
         try {return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonico.getBytes(StandardCharsets.UTF_8)));}
         catch(java.security.NoSuchAlgorithmException ex) {throw new IllegalStateException("SHA-256 no disponible.");}
     }
-    static boolean cuitValido(String cuit) {
+    public static boolean cuitValido(String cuit) {
         if(cuit==null || !cuit.matches("[0-9]{11}") || cuit.equals("00000000000")) return false;
         int[] pesos={5,4,3,2,7,6,5,4,3,2};int suma=0;
         for(int i=0;i<10;i++) suma+=(cuit.charAt(i)-'0')*pesos[i];
