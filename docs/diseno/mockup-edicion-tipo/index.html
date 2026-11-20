@@ -51,6 +51,7 @@
         <label>Punto de venta
           <select id="punto">
             <option value="local">Mostrador de prueba</option>
+            <option value="sucursal">Sucursal de prueba</option>
             <option value="fiscal">99001 · Homologación</option>
           </select>
           <small id="ayuda-punto">Seleccioná el punto de venta del comprobante.</small>
@@ -99,12 +100,12 @@ const editor = document.getElementById('editor');
 const comprobantes = document.getElementById('comprobantes');
 const informar = document.getElementById('informar');
 const vista = new URLSearchParams(location.search).get('origen');
-let tipoInicial = vista === 'B' ? 'B' : 'C';
+let tipoInicial = vista === 'B' || vista === 'edicion-B' ? 'B' : 'C';
 let solicitudRegistrada = false;
 function actualizar() {
   const fiscal = tipo.value === 'C';
   document.querySelectorAll('[data-fiscal]').forEach(el => el.hidden = !fiscal);
-  punto.disabled = tipoInicial === tipo.value || solicitudRegistrada;
+  punto.disabled = solicitudRegistrada || (fiscal && tipoInicial === 'C');
   punto.value = fiscal || tipoInicial === 'C' ? 'fiscal' : 'local';
   const ayudaPunto = document.getElementById('ayuda-punto');
   ayudaPunto.hidden = punto.disabled;
@@ -145,6 +146,7 @@ document.getElementById('editar').addEventListener('click', () => {
 });
 actualizar();
 if (vista === 'C') punto.value = 'local';
+if (vista === 'edicion-B') punto.value = 'sucursal';
 if (vista === 'guardada') abrirComprobantes();
 </script>
 </body>

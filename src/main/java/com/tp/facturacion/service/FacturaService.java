@@ -350,18 +350,22 @@ public class FacturaService {
             if (!request.getRevision().equals(factura.getRevision())) {
                 throw new ReglaNegocioException("La factura cambió. Volvé a abrirla antes de guardar");
             }
-            if (factura.getTipoComprobante() == null && request.getTipoComprobante() != TipoComprobante.FACTURA_C) {
+            TipoComprobante tipoActual = factura.getTipoComprobante();
+            TipoComprobante tipoDestino = request.getTipoComprobante();
+            if (tipoActual == null && tipoDestino != TipoComprobante.FACTURA_C) {
                 throw new ReglaNegocioException("La factura anterior debe conservar su cliente");
             }
-            if (request.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL
-                    && factura.getTipoComprobante() != TipoComprobante.CONSUMIDOR_FINAL
-                    && intentosArca.existsByFacturaId(id)) {
+            if (tipoDestino == TipoComprobante.CONSUMIDOR_FINAL
+                    && tipoActual != TipoComprobante.CONSUMIDOR_FINAL && intentosArca.existsByFacturaId(id)) {
                 throw new ReglaNegocioException("El tipo no puede cambiarse después de solicitar una autorización fiscal");
             }
-            if (factura.getTipoComprobante() != null && factura.getTipoComprobante() != request.getTipoComprobante()) {
-                asignarPuntoAlConvertir(factura, request.getPuntoVentaId(), request.getTipoComprobante());
+            boolean cambiaTipo = tipoActual != null && tipoActual != tipoDestino;
+            boolean mueveFacturaB = tipoActual == TipoComprobante.CONSUMIDOR_FINAL && tipoDestino == tipoActual
+                    && request.getPuntoVentaId() != null && !request.getPuntoVentaId().equals(factura.getPuntoVenta().getId());
+            if (cambiaTipo || mueveFacturaB) {
+                asignarPuntoVenta(factura, request.getPuntoVentaId(), tipoDestino);
             }
-            factura.setTipoComprobante(request.getTipoComprobante());
+            factura.setTipoComprobante(tipoDestino);
             asignarReceptor(factura, request);
             factura.setListaPrecio(listas.activa(request.getListaPrecioId()));
         }
@@ -434,7 +438,7 @@ public class FacturaService {
 
     // ======================= AUXILIARES =======================
 
-    private void asignarPuntoAlConvertir(FacturaVenta factura, Long puntoSolicitado, TipoComprobante tipoDestino) {
+    private void asignarPuntoVenta(FacturaVenta factura, Long puntoSolicitado, TipoComprobante tipoDestino) {
         PuntoVenta puntoActual = factura.getPuntoVenta();
         Long puntoDestino = puntoSolicitado == null ? puntoActual.getId() : puntoSolicitado;
         if (tipoDestino == TipoComprobante.FACTURA_C

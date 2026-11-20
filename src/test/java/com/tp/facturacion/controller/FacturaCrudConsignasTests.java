@@ -180,6 +180,37 @@ class FacturaCrudConsignasTests {
     }
 
     @Test
+    void cambiarPuntoEnUnaFacturaBConservaElTipoYNumeraEnElDestino() throws Exception {
+        prepararConversion();
+        auditada("punto_venta", "id,numero,descripcion", "3,3,'Sucursal'");
+        String altaB = """
+                {"tipoComprobante":"CONSUMIDOR_FINAL","puntoVentaId":%d,"tipoMonedaId":1,"listaPrecioId":1,
+                 "operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547%d",
+                 "detalles":[{"articuloId":1,"cantidad":1}]}
+                """;
+        for (int punto : new int[]{1, 3}) {
+            mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON)
+                    .content(altaB.formatted(punto, punto)))
+                    .andExpect(status().isCreated()).andExpect(jsonPath("$.numeroFactura").value(1));
+        }
+
+        jdbc.update("UPDATE punto_venta SET fechaBaja = CURRENT_TIMESTAMP WHERE id = 3");
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("CONSUMIDOR_FINAL", 3, 0, "")))
+                .andExpect(status().isConflict());
+        jdbc.update("UPDATE punto_venta SET fechaBaja = NULL WHERE id = 3");
+
+        mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
+                .content(edicion("CONSUMIDOR_FINAL", 3, 0, "")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(100))
+                .andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"))
+                .andExpect(jsonPath("$.numeroFactura").value(2));
+        assertEquals(3L, jdbc.queryForObject("SELECT punto_venta_id FROM factura_venta WHERE id=100", Long.class));
+        assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM arca_intento", Integer.class));
+    }
+
+    @Test
     void despuesDeUnaSolicitudRechazadaSePuedeCambiarClientePeroNoTipo() throws Exception {
         prepararConversion();
         mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""

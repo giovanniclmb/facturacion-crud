@@ -464,17 +464,19 @@ function sincronizarTipo(): void {
     if (!edicion) return;
 
     const aFacturaC = edicion.tipoOriginal === 'CONSUMIDOR_FINAL' && !esInterno();
-    const aFacturaB = edicion.tipoOriginal === 'FACTURA_C' && esInterno();
-    const convirtiendo = aFacturaC || aFacturaB;
+    const comoFacturaB = esInterno();
+    const puntoEditable = aFacturaC || comoFacturaB;
     const opciones = aFacturaC ? edicion.puntosVentaHomologacion : puntosVentaCatalogo;
-    const puntoElegido = idSeleccionado(altaPuntoVenta) ?? edicion.puntoOriginal;
+    const puntoElegido = comoFacturaB && edicion.tipoOriginal === 'CONSUMIDOR_FINAL'
+        ? edicion.puntoOriginal
+        : idSeleccionado(altaPuntoVenta) ?? edicion.puntoOriginal;
     llenarSelect(altaPuntoVenta, opciones, 'Seleccione…');
-    altaPuntoVenta.value = convirtiendo
+    altaPuntoVenta.value = puntoEditable
         ? (opciones.some(punto => punto.id === puntoElegido) ? String(puntoElegido) : '')
         : String(edicion.puntoOriginal);
-    altaPuntoVenta.disabled = !convirtiendo || opciones.length === 0;
-    ayudaPuntoVenta.hidden = !convirtiendo;
-    if (aFacturaB) {
+    altaPuntoVenta.disabled = !puntoEditable || opciones.length === 0;
+    ayudaPuntoVenta.hidden = !puntoEditable;
+    if (comoFacturaB) {
         ayudaPuntoVenta.textContent = 'Podés elegir cualquier punto de venta activo.';
     } else if (aFacturaC) {
         ayudaPuntoVenta.textContent = opciones.length > 0

@@ -283,3 +283,38 @@ test('editar una C permite elegir otro punto de venta al convertirla a B', async
     assert.equal(datos.clienteId, undefined);
     assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
 });
+
+test('editar una B permite conservar el tipo y guardar otro punto activo', async t => {
+    const interna = { ...factura, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true };
+    const app = await montar({ resolver: llamada => {
+        const url = new URL(llamada.url);
+        if (url.pathname.endsWith('/facturas') && llamada.method === 'GET') return respuesta(pagina([interna]));
+        if (url.pathname.endsWith('/1/detalle')) return respuesta({
+            id: 1, revision: 2, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true, puedeCambiarTipo: true,
+            puntoVentaId: 1, puntosVentaHomologacion: [], clienteId: null, condicionIvaId: 5, tipoMonedaId: 1,
+            listaPrecioId: 1, fechaEmision: '2026-11-20',
+            detalles: [{ ...precio, listaPrecioArticuloId: precio.id, cantidad: 1, porcentajeBonificacion: 0 }]
+        });
+        if (url.pathname.endsWith('/listas-precio-articulos/precio')) return respuesta(precio);
+        if (url.pathname.endsWith('/puntos-venta')) return respuesta([...opcion, { id: 3, descripcion: 'Sucursal' }]);
+        if (llamada.method === 'PUT') return respuesta(interna);
+    } });
+    t.after(() => app.cerrar());
+    [...app.document.querySelectorAll('button')].find(boton => boton.textContent === 'Editar').click();
+    await flush();
+
+    const punto = porId(app, 'alta-punto-venta');
+    assert.equal(punto.disabled, false);
+    assert.equal(punto.value, '1');
+    punto.value = '3';
+    submit(app, 'form-alta');
+    await flush();
+
+    const put = app.llamados.find(llamada => llamada.method === 'PUT');
+    assert.ok(put);
+    const datos = JSON.parse(put.opciones.body);
+    assert.equal(datos.tipoComprobante, 'CONSUMIDOR_FINAL');
+    assert.equal(datos.puntoVentaId, 3);
+    assert.equal(datos.clienteId, undefined);
+    assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
+});
