@@ -43,9 +43,13 @@ public class AlmacenIntentosArca {
   if(anterior.isPresent() && IntentoArca.ESTADOS_ACTIVOS.contains(anterior.get().estado)) {
    var i=anterior.get();return new Reserva(i.id,i.propietario,false);
   }
+  if (anterior.isPresent() && !anterior.get().serie.serie().equals(serie)) {
+   throw conflicto("La serie fiscal no corresponde al historial de la factura");
+  }
   if(s.intentoActivo!=null) throw conflicto("La serie tiene una autorización pendiente");
   if(tieneCae(f)||!"PENDIENTE".equals(f.getEstado())) throw conflicto("La factura no permite autorización");
   if(f.getPuntoVenta().getNumero()!=serie.puntoVenta()) throw conflicto("El punto de venta cambió");
+  if (ArcaProperties.tipoFiscal(f.getTipoComprobante()) != serie.tipo()) throw conflicto("El tipo de comprobante cambió");
   Snapshot snapshot=factory.crear(f,serie.emisor(),iva,confirmar);
   IntentoArca i=new IntentoArca();i.id=UUID.randomUUID();i.propietario=UUID.randomUUID();
   i.factura=f;i.serie=s;i.usuarioIniciador=em.getReference(com.tp.facturacion.model.Usuario.class,usuarioSistemaId);i.estado=PREPARANDO;i.snapshot(snapshot);i.hash=factory.hash(snapshot);
@@ -95,10 +99,13 @@ public class AlmacenIntentosArca {
   }
   autorizar(i,c.cae(),c.vencimiento());tocar(i);
  }
- public Reserva recuperarPreparando(long facturaId) {
+ public Reserva recuperarPreparando(long facturaId, String emisor) {
   IntentoArca previo=ultimo(facturaId).orElseThrow(()->conflicto("No existe intento pendiente"));
   IntentoArca i=bloquear(previo.id);
   if(i.estado!=PREPARANDO||i.numero!=null||!i.id.equals(i.serie.intentoActivo)) throw conflicto("El intento ya no está en preparación");
+  if (!"HOMOLOGACION".equals(i.serie.getAmbiente()) || !Objects.equals(emisor, i.serie.getEmisor())) {
+   throw conflicto("El emisor configurado no corresponde al intento pendiente");
+  }
   i.propietario=UUID.randomUUID();tocar(i);return new Reserva(i.id,i.propietario,true);
  }
  @Transactional(readOnly=true)
@@ -111,23 +118,23 @@ public class AlmacenIntentosArca {
   IntentoArca i=ultimo(facturaId).orElse(null);
   boolean bloqueada=tieneCae(f)||(i!=null&&IntentoArca.ESTADOS_ACTIVOS.contains(i.estado));
   boolean anulada="ANULADA".equals(f.getEstado());
-  boolean consultar=i!=null&&(i.estado==PREPARANDO||i.estado==ENVIANDO||i.estado==INCIERTO);
+  int tipoFiscal = ArcaProperties.tipoFiscal(f.getTipoComprobante());
+  boolean coincideEmisor = i == null || props.coincideEmisorHomologacion(i.serie.getAmbiente(), i.serie.getEmisor());
+  String impedimento = props.impedimentoAutorizacion(tipoFiscal, f.getPuntoVenta().getNumero(), coincideEmisor);
+  boolean consultar=i!=null&&coincideEmisor&&(i.estado==PREPARANDO||i.estado==ENVIANDO||i.estado==INCIERTO);
   LocalDate vencimiento=i==null?(f.getCaeFechaVencimiento()==null?null:Instant.ofEpochMilli(f.getCaeFechaVencimiento().getTime()).atZone(ZoneId.of("America/Argentina/Buenos_Aires")).toLocalDate()):i.vencimiento;
-  boolean interno=f.getTipoComprobante()==com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL;
   String mensaje;
-  if (interno) mensaje="No aplica. Es un comprobante interno.";
+  if (tipoFiscal == 0 || (!coincideEmisor && !tieneCae(f))) mensaje=impedimento;
   else if (i!=null) mensaje=i.estado.name();
   else if (tieneCae(f)) mensaje="CAE histórico sin verificar";
   else if (anulada) mensaje="Comprobante anulado";
-  else if (!props.isHabilitado()) mensaje="ARCA está deshabilitada";
-  else if (!props.getPuntosVentaExclusivos().contains(f.getPuntoVenta().getNumero()))
-   mensaje="Configure un punto de venta exclusivo para autorizar";
+  else if (impedimento != null) mensaje=impedimento;
   else mensaje="Pendiente de autorización";
   return new FacturaArcaDto(facturaId,f.getNumero(),i==null?null:i.id,i==null?null:i.estado,
    i==null?f.getNumeroFiscal():i.numero,i==null?f.getPuntoVenta().getNumero():i.serie.getPuntoVenta(),
-   i==null?11:i.serie.getTipo(),i==null?f.getAmbienteFiscal():i.serie.getAmbiente(),f.getCae(),vencimiento,
+   i==null?tipoFiscal:i.serie.getTipo(),i==null?f.getAmbienteFiscal():i.serie.getAmbiente(),f.getCae(),vencimiento,
    mensaje,i==null?List.of():decodificar(i.errores),i==null?List.of():decodificar(i.observaciones),
-   !interno&&props.isHabilitado()&&props.getPuntosVentaExclusivos().contains(f.getPuntoVenta().getNumero())&&!bloqueada&&"PENDIENTE".equals(f.getEstado()),consultar,!bloqueada&&"PENDIENTE".equals(f.getEstado()),!bloqueada&&!anulada,!bloqueada&&i==null);
+   impedimento==null&&!bloqueada&&"PENDIENTE".equals(f.getEstado()),consultar,!bloqueada&&"PENDIENTE".equals(f.getEstado()),!bloqueada&&!anulada,!bloqueada&&i==null);
  }
  private SerieArca crearYBloquear(Serie s) {
   boolean pg=em.unwrap(org.hibernate.Session.class).doReturningWork(c->c.getMetaData().getDatabaseProductName().equals("PostgreSQL"));
@@ -164,7 +171,12 @@ public class AlmacenIntentosArca {
  }
  private void auditar(FacturaVenta f){f.setFechaModificacion(Date.from(reloj.instant()));f.setUsuarioModificacion(em.getReference(com.tp.facturacion.model.Usuario.class,usuarioSistemaId));}
  private boolean tieneCae(FacturaVenta f){return f.getCae()!=null&&!f.getCae().isBlank();}
- static boolean coincide(Snapshot a,Snapshot b){return b!=null&&a.concepto()==b.concepto()&&a.docTipo()==b.docTipo()&&a.docNumero()==b.docNumero()&&a.condicionIva()==b.condicionIva()&&a.fecha().equals(b.fecha())&&a.moneda().equals(b.moneda())&&a.cotizacion().compareTo(b.cotizacion())==0&&a.total().compareTo(b.total())==0;}
+ static boolean coincide(Snapshot a,Snapshot b){
+  return b!=null&&a.concepto()==b.concepto()&&a.docTipo()==b.docTipo()&&a.docNumero()==b.docNumero()
+          &&a.condicionIva()==b.condicionIva()&&a.fecha().equals(b.fecha())&&a.moneda().equals(b.moneda())
+          &&a.cotizacion().compareTo(b.cotizacion())==0&&a.total().compareTo(b.total())==0
+          &&a.neto().compareTo(b.neto())==0&&a.iva().compareTo(b.iva())==0;
+ }
  private ReglaNegocioException conflicto(String m){return new ReglaNegocioException(m);}
  private String codificar(List<ErrorFiscal> errores){return errores.stream().map(e->e.codigo()+":"+Base64.getEncoder().encodeToString(sanear(e.mensaje()).getBytes(StandardCharsets.UTF_8))).collect(java.util.stream.Collectors.joining("\n"));}
  private String sanear(String m){if(m==null)return "";if(m.contains("<")||m.toLowerCase(Locale.ROOT).matches("(?s).*(token|sign|password|secret|credential|\\.pem).*"))return "Mensaje fiscal omitido";return m.replaceAll("[\\p{Cntrl}]"," ").substring(0,Math.min(500,m.length()));}

@@ -31,16 +31,27 @@ public class AutorizacionArcaService {
         FacturaArcaDto previo=almacen.estado(facturaId);
         // Un segundo clic no puede despachar un intento pendiente o autorizado.
         if (previo.cae()!=null && !previo.cae().isBlank() || activo(previo.estadoFiscal())) return previo;
+        int tipo = previo.tipoComprobante();
+        if (tipo == 0) throw new ReglaNegocioException("El comprobante interno no permite autorización fiscal");
         props.validarAutorizacion(previo.puntoVenta());
-        if (!previo.puedeAutorizar()) throw new ReglaNegocioException("La factura no permite autorización");
-        if (!confirmarCuit) throw new IllegalArgumentException("Debe confirmar que el documento del cliente es un CUIT");
+        if (!props.admiteTipoFiscal(tipo)) throw new ReglaNegocioException(props.mensajePerfilIncompatible(tipo));
+        if (!previo.puedeAutorizar()) {
+            throw new ReglaNegocioException(previo.mensaje() == null || previo.mensaje().isBlank()
+                    ? "La factura no permite autorización" : previo.mensaje());
+        }
+        boolean esB = tipo == ArcaProperties.FACTURA_B;
+        if (!confirmarCuit) throw new IllegalArgumentException(esB ? "Confirme los datos del consumidor final"
+                : "Debe confirmar que el documento del cliente es un CUIT");
         TicketAcceso ticket=wsaa.obtenerTicket();
-        Set<Integer> iva=lecturas.condicionesIvaReceptor(ticket).stream()
+        String clase = esB ? "B" : "C";
+        // El catálogo general de homologación omite la clase B para Consumidor Final.
+        var condiciones = esB ? lecturas.condicionesIvaReceptor(ticket, clase) : lecturas.condicionesIvaReceptor(ticket);
+        Set<Integer> iva=condiciones.stream()
                 .filter(c -> c.claseComprobante()!=null && Arrays.stream(c.claseComprobante().split("/"))
-                        .map(String::trim).anyMatch("C"::equals))
+                        .map(String::trim).anyMatch(clase::equals))
                 .map(CondicionIvaReceptor::id).collect(Collectors.toSet());
         if (iva.isEmpty()) throw new ArcaRemotaException();
-        Serie serie=new Serie("HOMOLOGACION",props.getCuit(),previo.puntoVenta(),11);
+        Serie serie=new Serie("HOMOLOGACION",props.getCuit(),previo.puntoVenta(),tipo);
         Reserva reserva=revision == null
                 ? almacen.reservar(facturaId,serie,iva,true)
                 : almacen.reservar(facturaId,serie,iva,true,revision);
@@ -77,14 +88,14 @@ public class AutorizacionArcaService {
         if (previo.estadoFiscal()==PREPARANDO) {
             // Consultar nunca solicita CAE. Invalida al ejecutor anterior antes de
             // cerrar una preparación que todavía no alcanzó el punto de despacho.
-            Reserva reserva=almacen.recuperarPreparando(facturaId);
+            Reserva reserva=almacen.recuperarPreparando(facturaId, props.getCuit());
             almacen.fallarAntesEnvio(reserva);
             return almacen.estado(facturaId);
         }
         Optional<Envio> pendiente=almacen.envioPendiente(facturaId);
         if (pendiente.isEmpty()) return almacen.estado(facturaId);
         Envio envio=pendiente.get();
-        if (!"HOMOLOGACION".equals(envio.serie().ambiente()) || !Objects.equals(props.getCuit(),envio.serie().emisor()))
+        if (!props.coincideEmisorHomologacion(envio.serie().ambiente(), envio.serie().emisor()))
             throw new ReglaNegocioException("El emisor configurado no corresponde al intento pendiente");
         try {
             Consulta consulta=cliente.consultar(wsaa.obtenerTicket(),envio.serie(),envio.numero());

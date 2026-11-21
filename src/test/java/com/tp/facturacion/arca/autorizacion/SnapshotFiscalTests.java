@@ -27,6 +27,46 @@ class SnapshotFiscalTests {
         var equivalente=new ContratoFiscal.Snapshot(1,80,s.docNumero(),5,s.fecha(),"PES",new BigDecimal("1.000000"),new BigDecimal("100.0100"));
         assertEquals(factory.hash(s),factory.hash(equivalente));
     }
+    @Test void bSoloIdentificaAlConsumidorCuandoElTotalLlegaAlUmbral() {
+        var b = facturaB(9_999_999.99);
+        var anonima = factory.crear(b, EMISOR, Set.of(5), true);
+        assertEquals(99, anonima.docTipo());
+        assertEquals(0, anonima.docNumero());
+        assertEquals(5, anonima.condicionIva());
+        assertEquals(anonima.total(), anonima.neto().add(anonima.iva()));
+
+        var enUmbral = facturaB(10_000_000.00);
+        assertThrows(IllegalArgumentException.class, () -> factory.crear(enUmbral, EMISOR, Set.of(5), true));
+        enUmbral.setDocumentoReceptorTipo(96);
+        enUmbral.setDocumentoReceptorNumero(22_222_222L);
+        var identificada = factory.crear(enUmbral, EMISOR, Set.of(5), true);
+        assertEquals(96, identificada.docTipo());
+        assertEquals(22_222_222, identificada.docNumero());
+    }
+    @Test void bExigeIvaExplicitoYNoPermiteUsarElCuitDelEmisor() {
+        var b = facturaB(121);
+        b.getDetalles().getFirst().setIvaPorcentaje(null);
+        assertThrows(IllegalArgumentException.class, () -> factory.crear(b, EMISOR, Set.of(5), true));
+        b.getDetalles().getFirst().setIvaPorcentaje(BigDecimal.valueOf(21));
+        b.setDocumentoReceptorTipo(86);
+        b.setDocumentoReceptorNumero(Long.valueOf(EMISOR));
+        assertThrows(IllegalArgumentException.class, () -> factory.crear(b, EMISOR, Set.of(5), true));
+    }
+    private FacturaVenta facturaB(double total) {
+        var b = facturaValida();
+        b.setTipoComprobante(TipoComprobante.FACTURA_B);
+        b.setCliente(null);
+        b.setImporteTotal(total);
+        var detalle = b.getDetalles().getFirst();
+        var finalCobrado = BigDecimal.valueOf(total);
+        var neto = SnapshotFiscalFactory.netoFacturaB(finalCobrado);
+        detalle.setPrecioUnitario(total);
+        detalle.setImporteSubtotal(total);
+        detalle.setImporteNeto(neto.doubleValue());
+        detalle.setImporteIva(finalCobrado.subtract(neto).doubleValue());
+        detalle.setIvaPorcentaje(BigDecimal.valueOf(21));
+        return b;
+    }
     @ParameterizedTest @ValueSource(strings={"20222222224","20111111112","20-22222222-3","", "27222222223"})
     void rechazaDocumentoInvalidoOEmisor(String doc) {var f=facturaValida();f.getCliente().setCuitCuil(doc);assertThrows(IllegalArgumentException.class,()->factory.crear(f,EMISOR,Set.of(5),true));}
     @Test void validaCatalogoMonedaFechaEstadoYDetalles() {

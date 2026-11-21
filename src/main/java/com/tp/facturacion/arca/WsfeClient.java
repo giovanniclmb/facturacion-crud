@@ -47,7 +47,11 @@ public class WsfeClient {
         catch(Exception ex) {throw new ArcaRemotaException();}
     }
     public List<CondicionIvaReceptor> condicionesIvaReceptor(TicketAcceso ticket) {
-        var get=coleccion(llamar("FEParamGetCondicionIvaReceptor",auth(ticket)));
+        return condicionesIvaReceptor(ticket, null);
+    }
+    public List<CondicionIvaReceptor> condicionesIvaReceptor(TicketAcceso ticket, String clase) {
+        String filtro = clase == null ? "" : "<ClaseCmp>" + XmlSeguro.escapar(clase) + "</ClaseCmp>";
+        var get=coleccion(llamar("FEParamGetCondicionIvaReceptor",auth(ticket) + filtro));
         var condiciones=new ArrayList<CondicionIvaReceptor>();var ids=new HashSet<Integer>();
         for(var e:XmlSeguro.hijos(get)) {
             exigirNombre(e,"CondicionIvaReceptor");int id=entero(XmlSeguro.texto(e,NS,"Id"));

@@ -14,14 +14,19 @@ class MigracionArcaPostgresTests extends PostgresArcaFixture {
    assertEquals(1,count(c,"SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname='uq_arca_factura_activa'"));
   }
  }
- @Test void permiteUnicamenteComprobantesInternosSinCliente() throws Exception {
+ @Test void validaClienteYDocumentoSegunElTipo() throws Exception {
   try (Connection c=abrir()) {
    assertThrows(SQLException.class, ()->c.createStatement().executeUpdate(
            "UPDATE factura_venta SET cliente_id=NULL WHERE id=1"));
    assertEquals(1, c.createStatement().executeUpdate(
-           "UPDATE factura_venta SET cliente_id=NULL,tipo_comprobante='CONSUMIDOR_FINAL' WHERE id=1"));
+           "UPDATE factura_venta SET cliente_id=NULL,tipo_comprobante='FACTURA_X' WHERE id=1"));
    assertThrows(SQLException.class, ()->c.createStatement().executeUpdate(
            "UPDATE factura_venta SET cae='12345678901234' WHERE id=1"));
+   assertThrows(SQLException.class, ()->c.createStatement().executeUpdate(
+           "UPDATE factura_venta SET documento_receptor_tipo=96,documento_receptor_numero=12345678 WHERE id=1"));
+   assertEquals(1, c.createStatement().executeUpdate(
+           "UPDATE factura_venta SET tipo_comprobante='FACTURA_B',documento_receptor_tipo=96,"
+           + "documento_receptor_numero=12345678 WHERE id=1"));
   }
  }
  @Test void cargaClientesDeDemoSinDuplicarlosNiModificarFacturas() throws Exception {

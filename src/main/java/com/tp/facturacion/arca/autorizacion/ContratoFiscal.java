@@ -9,7 +9,13 @@ public final class ContratoFiscal {
     private ContratoFiscal() {}
     public record Serie(String ambiente, String emisor, int puntoVenta, int tipo) {}
     public record Snapshot(int concepto, int docTipo, long docNumero, int condicionIva,
-            LocalDate fecha, String moneda, BigDecimal cotizacion, BigDecimal total) {}
+            LocalDate fecha, String moneda, BigDecimal cotizacion, BigDecimal total,
+            BigDecimal neto, BigDecimal iva) {
+        public Snapshot(int concepto, int docTipo, long docNumero, int condicionIva,
+                LocalDate fecha, String moneda, BigDecimal cotizacion, BigDecimal total) {
+            this(concepto, docTipo, docNumero, condicionIva, fecha, moneda, cotizacion, total, total, BigDecimal.ZERO);
+        }
+    }
     public record ErrorFiscal(int codigo, String mensaje) {}
     public record ResultadoEnvio(boolean aceptado, String cae, LocalDate vencimiento,
             List<ErrorFiscal> errores, List<ErrorFiscal> observaciones) {

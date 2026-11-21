@@ -27,7 +27,7 @@ public class FacturaPdfExporter {
 
     private static final String[] ENCABEZADOS = {
         "N° local", "Fecha", "Cliente", "Condición IVA",
-        "Punto de venta", "Importe total", "Ítems", "N° fiscal", "Estado fiscal"
+        "Punto de venta", "Importe total", "Ítems", "N° fiscal", "Estado fiscal", "Tipo"
     };
 
     public byte[] exportar(List<FacturaReporteDto> facturas) {
@@ -57,7 +57,7 @@ public class FacturaPdfExporter {
         // Tabla
         PdfPTable tabla = new PdfPTable(ENCABEZADOS.length);
         tabla.setWidthPercentage(100);
-        tabla.setWidths(new float[] {0.8f, 1.1f, 2f, 1.5f, 1.4f, 1.3f, 0.6f, 2f, 1.5f});
+        tabla.setWidths(new float[] {0.8f, 1.1f, 2f, 1.5f, 1.4f, 1.3f, 0.6f, 2f, 1.5f, 1f});
         tabla.setHeaderRows(1); // repite el encabezado si la tabla sigue en otra página
 
         for (String encabezado : ENCABEZADOS) {
@@ -82,6 +82,7 @@ public class FacturaPdfExporter {
             tabla.addCell(celda(String.valueOf(f.getCantidadItems()), fuenteTexto, Element.ALIGN_CENTER));
             tabla.addCell(celda(f.numeroFiscalFormateado(), fuenteTexto, Element.ALIGN_CENTER));
             tabla.addCell(celda(f.estadoFiscalTexto(), fuenteTexto, Element.ALIGN_CENTER));
+            tabla.addCell(celda(f.tipoComprobanteTexto(), fuenteTexto, Element.ALIGN_CENTER));
 
             totalImporte += f.getImporteTotal();
             totalItems += f.getCantidadItems();
@@ -94,6 +95,7 @@ public class FacturaPdfExporter {
         tabla.addCell(etiqueta);
         tabla.addCell(celda(moneda.format(totalImporte), fuenteEncabezado, Element.ALIGN_RIGHT));
         tabla.addCell(celda(String.valueOf(totalItems), fuenteEncabezado, Element.ALIGN_CENTER));
+        tabla.addCell(celda("", fuenteTexto, Element.ALIGN_LEFT));
         tabla.addCell(celda("", fuenteTexto, Element.ALIGN_LEFT));
         tabla.addCell(celda("", fuenteTexto, Element.ALIGN_LEFT));
 

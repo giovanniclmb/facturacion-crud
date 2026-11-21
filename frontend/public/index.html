@@ -93,7 +93,8 @@
                         <label for="alta-tipo" class="form-label">Tipo de comprobante</label>
                         <select id="alta-tipo" class="form-select">
                             <option value="FACTURA_C">Factura C</option>
-                            <option value="CONSUMIDOR_FINAL">Factura B - Consumidor Final</option>
+                            <option value="FACTURA_B">Factura B - Consumidor Final</option>
+                            <option value="FACTURA_X">Factura X</option>
                         </select>
                     </div>
                     <div class="col-md-6 col-lg-3">
@@ -130,6 +131,26 @@
                     </div>
                 </div>
 
+                <fieldset id="alta-documento" class="border rounded mb-3 px-3 pb-3" hidden>
+                    <legend class="float-none w-auto px-2 fs-6 mb-0">Consumidor final</legend>
+                    <p id="alta-documento-ayuda" class="form-text mt-1"></p>
+                    <div class="row g-3">
+                        <div class="col-md-6 col-lg-3">
+                            <label for="alta-documento-tipo" class="form-label">Tipo de documento</label>
+                            <select id="alta-documento-tipo" class="form-select" aria-describedby="alta-documento-ayuda">
+                                <option value="">Sin documento</option>
+                                <option value="96">DNI</option>
+                                <option value="86">CUIL</option>
+                                <option value="87">CDI</option>
+                            </select>
+                        </div>
+                        <div id="alta-documento-campo-numero" class="col-md-6 col-lg-3" hidden>
+                            <label for="alta-documento-numero" class="form-label">Número de documento</label>
+                            <input id="alta-documento-numero" class="form-control" type="text" inputmode="numeric" maxlength="11">
+                        </div>
+                    </div>
+                </fieldset>
+
                 <!-- Tabla dinámica de ítems -->
                 <p class="ayuda-tabla">La tabla de ítems se puede desplazar horizontalmente.</p>
                 <div class="table-responsive tabla-contenedor" role="region" aria-label="Ítems de la factura, tabla desplazable" tabindex="0">
@@ -145,15 +166,19 @@
                         </tr>
                         </thead>
                         <tbody id="items-tbody"></tbody>
-                        <tfoot>
-                        <tr>
-                            <td colspan="4" class="text-end fw-semibold">Total (estimado)</td>
-                            <td id="items-total" class="numero fw-semibold"></td>
-                            <td></td>
-                        </tr>
-                        </tfoot>
                     </table>
                 </div>
+
+                <dl class="alta-totales">
+                    <div id="items-iva-fila" hidden>
+                        <dt>IVA contenido (21 %)</dt>
+                        <dd id="items-iva"></dd>
+                    </div>
+                    <div class="fw-semibold">
+                        <dt>Total (estimado)</dt>
+                        <dd id="items-total"></dd>
+                    </div>
+                </dl>
 
                 <div class="d-flex justify-content-between alta-acciones gap-2">
                     <button type="button" id="btn-agregar-item" class="btn btn-outline-primary">+ Agregar ítem</button>

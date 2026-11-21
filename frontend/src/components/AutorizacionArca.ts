@@ -1,4 +1,4 @@
-import { FacturaReporteDTO } from '../models/factura.dto.js';
+import { FacturaReporteDTO, normalizarTipoComprobante } from '../models/factura.dto.js';
 import { FacturaArcaDTO } from '../models/arca.dto.js';
 import { permisosFactura } from '../models/permisosFactura.js';
 import { FacturaService } from '../services/FacturaService.js';
@@ -10,6 +10,7 @@ interface CoordinacionArca {
     iniciar(): void;
     finalizar(): void;
     bloquearRecuperacion(bloquear: boolean): void;
+    recargarListado(): void;
     estadoActualizado(estado: FacturaArcaDTO, recargarComprobantes: boolean): void;
 }
 
@@ -26,6 +27,7 @@ export class AutorizacionArca {
     private recuperacionFallida = false;
     private revisionDesactualizada = false;
     private detalle?: FacturaArcaDTO;
+    private errorPreparacion?: string;
 
     constructor(private readonly factura: FacturaReporteDTO, private readonly servicio: FacturaService,
                 private readonly coordinacion: CoordinacionArca) {
@@ -39,7 +41,10 @@ export class AutorizacionArca {
         this.estado.tabIndex = -1;
         this.confirmar.type = 'checkbox';
         this.etiqueta.className = 'arca-confirmacion';
-        this.etiqueta.append(this.confirmar, document.createTextNode('Homologación. Confirmo que el documento del cliente es un CUIT.'));
+        const confirmacion = factura.tipoComprobante === 'FACTURA_B'
+            ? 'Homologación. Confirmo los datos del consumidor final.'
+            : 'Homologación. Confirmo que el documento del cliente es un CUIT.';
+        this.etiqueta.append(this.confirmar, document.createTextNode(confirmacion));
         this.confirmar.addEventListener('change', () => this.actualizar());
         this.informar.addEventListener('click', () => { void this.ejecutar('autorizar'); });
         this.consultar.addEventListener('click', () => { void this.ejecutar('consultar'); });
@@ -87,7 +92,7 @@ export class AutorizacionArca {
 
     private mostrarEstado(): void {
         const f = this.factura;
-        if (f.tipoComprobante === 'CONSUMIDOR_FINAL') {
+        if (normalizarTipoComprobante(f.tipoComprobante) === 'FACTURA_X') {
             this.estado.textContent = 'No aplica. Es un comprobante interno.';
             return;
         }
@@ -105,7 +110,30 @@ export class AutorizacionArca {
         else if (!this.detalle && f.mensajeArca) fragmentos.push(f.mensajeArca);
         for (const error of this.detalle?.errores ?? []) fragmentos.push(`${error.codigo}: ${error.mensaje}`);
         for (const obs of this.detalle?.observaciones ?? []) fragmentos.push(`Observación ${obs.codigo}: ${obs.mensaje}`);
+        if (this.errorPreparacion) fragmentos.push(this.errorPreparacion);
         this.estado.textContent = fragmentos.join(' · ');
+    }
+
+    private async confirmarDatosFacturaB(): Promise<boolean> {
+        this.confirmar.checked = false;
+        try {
+            const detalle = await this.servicio.obtenerDetalle(this.factura.id);
+            if (detalle.revision !== this.factura.revision || detalle.tipoComprobante !== 'FACTURA_B') {
+                this.revisionDesactualizada = true;
+                this.coordinacion.recargarListado();
+                return false;
+            }
+            if (detalle.documentoReceptorTipo === null && detalle.documentoReceptorNumero === null) return true;
+            const tipo = {96: 'DNI', 86: 'CUIL', 87: 'CDI'}[detalle.documentoReceptorTipo ?? 0];
+            if (!tipo || !detalle.documentoReceptorNumero) {
+                this.errorPreparacion = 'Revisá el documento del consumidor final antes de informar.';
+                return false;
+            }
+            return confirm(`¿Confirmás enviar a ARCA la Factura B con ${tipo} ${detalle.documentoReceptorNumero}?`);
+        } catch {
+            this.errorPreparacion = 'No se pudo leer el documento del consumidor final. Volvé a intentarlo.';
+            return false;
+        }
     }
 
     private async ejecutar(operacion: 'autorizar' | 'consultar' | 'estado'): Promise<void> {
@@ -115,11 +143,16 @@ export class AutorizacionArca {
         if (operacion === 'consultar' && !permisos.consultar) return;
         const conservarFoco = this.acciones.contains(document.activeElement) || document.activeElement === this.recargar;
         this.ocupado = true;
+        this.errorPreparacion = undefined;
         this.coordinacion.iniciar();
-        this.coordinacion.bloquearRecuperacion(true);
-        this.estado.textContent = operacion === 'autorizar' ? 'Informando a ARCA en homologación…' : 'Consultando estado ARCA…';
         this.actualizar();
         try {
+            if (operacion === 'autorizar' && this.factura.tipoComprobante === 'FACTURA_B') {
+                this.estado.textContent = 'Verificando los datos del consumidor final…';
+                if (!await this.confirmarDatosFacturaB()) return;
+            }
+            this.coordinacion.bloquearRecuperacion(true);
+            this.estado.textContent = operacion === 'autorizar' ? 'Informando a ARCA en homologación…' : 'Consultando estado ARCA…';
             let resultado: FacturaArcaDTO;
             try {
                 resultado = operacion === 'autorizar' ? await this.servicio.autorizarArca(this.factura.id, true, this.factura.revision)

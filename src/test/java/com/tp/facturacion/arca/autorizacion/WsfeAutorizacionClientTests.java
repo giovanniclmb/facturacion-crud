@@ -19,7 +19,11 @@ class WsfeAutorizacionClientTests {
     final Envio envio=new Envio(UUID.randomUUID(),serie,1,snapshot);
     WsfeAutorizacionClient cliente(String op,String result) { return cliente(op,result,x->{}); }
     WsfeAutorizacionClient cliente(String op,String result,Consumer<String> verificar) {
+        return cliente(op, result, verificar, ArcaProperties.PerfilEmisor.MONOTRIBUTISTA_O_EXENTO);
+    }
+    WsfeAutorizacionClient cliente(String op,String result,Consumer<String> verificar,ArcaProperties.PerfilEmisor perfil) {
         var p=new ArcaProperties();p.setHabilitado(true);p.setCuit(serie.emisor());p.setCertificado(Path.of("/ficticio/cert"));p.setClavePrivada(Path.of("/ficticio/key"));p.setTicketCache(Path.of("/ficticio/cache"));
+        p.setPerfilEmisor(perfil);
         return new WsfeAutorizacionClient(p,new SoapHttpClient((u,a,x)-> {
             assertEquals(NS+op,a);validarRequestContraWsdl(x,op);verificar.accept(x);
             String xml="<s:Envelope xmlns:s='"+SoapHttpClient.NS+"'><s:Body><"+op+"Response xmlns='"+NS+"'><"+op+"Result>"+result+"</"+op+"Result></"+op+"Response></s:Body></s:Envelope>";
@@ -63,6 +67,36 @@ class WsfeAutorizacionClientTests {
     @Test void consultaExigeTodosLosCamposYLosImportesCero() {
         var c=cliente("FECompConsultar",consulta()).consultar(ticket,serie,1).comprobante().orElseThrow();assertEquals(snapshot,c.snapshot());assertEquals(serie,c.serie());assertEquals(1,c.numero());
         for(String xml:List.of(consulta().replace("<ImpIVA>0</ImpIVA>",""),consulta().replace("<ImpTrib>0","<ImpTrib>1"),consulta().replace("<ImpNeto>100.01","<ImpNeto>100.00"),consulta().replace("<MonId>PES","<MonId>DOL"),consulta().replace("<CondicionIVAReceptorId>5</CondicionIVAReceptorId>",""),consulta().replace("<Resultado>A","<Resultado>R"),consulta().replace("<PtoVta>1","<PtoVta>2"))) assertThrows(ArcaRemotaException.class,()->cliente("FECompConsultar",xml).consultar(ticket,serie,1));
+    }
+    @Test void autorizaBAnonimaConImportesYAlIcuotaPersistidos() {
+        var serieB = new Serie("HOMOLOGACION", serie.emisor(), 1, 6);
+        var s = new Snapshot(1, 99, 0, 5, snapshot.fecha(), "PES", BigDecimal.ONE,
+                new BigDecimal("121.00"), new BigDecimal("100.00"), new BigDecimal("21.00"));
+        String respuesta = respuesta("A").replace("<CbteTipo>11", "<CbteTipo>6")
+                .replace("<DocTipo>80", "<DocTipo>99").replace("<DocNro>20222222223", "<DocNro>0");
+        var cliente = cliente("FECAESolicitar", respuesta, xml -> {
+            assertTrue(xml.contains("<CbteTipo>6</CbteTipo>"));
+            assertTrue(xml.contains("<DocTipo>99</DocTipo><DocNro>0</DocNro>"));
+            assertTrue(xml.contains("<ImpNeto>100.00</ImpNeto>"));
+            assertTrue(xml.contains("<ImpIVA>21.00</ImpIVA>"));
+            assertTrue(xml.contains("<Iva><AlicIva><Id>5</Id><BaseImp>100.00</BaseImp><Importe>21.00</Importe></AlicIva></Iva>"));
+        }, ArcaProperties.PerfilEmisor.RESPONSABLE_INSCRIPTO);
+        assertTrue(cliente.autorizar(ticket, new Envio(UUID.randomUUID(), serieB, 1, s)).aceptado());
+    }
+    @Test void consultaBVerificaElDesgloseFiscalYElTipoDeSerie() {
+        var serieB = new Serie("HOMOLOGACION", serie.emisor(), 1, 6);
+        String respuesta = consulta().replace("<CbteTipo>11", "<CbteTipo>6")
+                .replace("<DocTipo>80", "<DocTipo>99").replace("<DocNro>20222222223", "<DocNro>0")
+                .replace("<ImpTotal>100.01", "<ImpTotal>121.00").replace("<ImpNeto>100.01", "<ImpNeto>100.00")
+                .replace("<ImpIVA>0</ImpIVA>", "<ImpIVA>21.00</ImpIVA>")
+                .replace("<Resultado>A", "<Iva><AlicIva><Id>5</Id><BaseImp>100.00</BaseImp><Importe>21.00</Importe></AlicIva></Iva><Resultado>A");
+        var comprobante = cliente("FECompConsultar", respuesta, xml ->
+                assertTrue(xml.contains("<CbteTipo>6</CbteTipo>"))).consultar(ticket, serieB, 1).comprobante().orElseThrow();
+        assertEquals(new BigDecimal("21.00"), comprobante.snapshot().iva());
+        for (String invalida : List.of(respuesta.replace("<CbteTipo>6", "<CbteTipo>11"),
+                respuesta.replace("<Id>5", "<Id>4"), respuesta.replace("<BaseImp>100.00", "<BaseImp>99.00"))) {
+            assertThrows(ArcaRemotaException.class, () -> cliente("FECompConsultar", invalida).consultar(ticket, serieB, 1));
+        }
     }
     @Test void falloSoapNoEsNoEncontrado() {
         var p=new ArcaProperties();p.setHabilitado(true);p.setCuit(serie.emisor());p.setCertificado(Path.of("/f"));p.setClavePrivada(Path.of("/k"));p.setTicketCache(Path.of("/t"));

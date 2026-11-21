@@ -187,7 +187,7 @@ test('la lista elegida en el buscador vuelve al formulario de la factura', async
 });
 
 test('los comprobantes existentes e internos ofrecen PDF y estado de ARCA', async t => {
-    const interno = { ...factura, id: 2, tipoComprobante: 'CONSUMIDOR_FINAL', puedeImprimir: false };
+    const interno = { ...factura, id: 2, tipoComprobante: 'FACTURA_X', puedeImprimir: false };
     const app = await montar({ resolver: r => r.url.includes('/facturas?')
         ? respuesta(pagina([factura, interno])) : undefined });
     t.after(() => app.cerrar());
@@ -196,19 +196,19 @@ test('los comprobantes existentes e internos ofrecen PDF y estado de ARCA', asyn
         assert.equal(fila.querySelector('.btn-recargar-arca').hidden, false);
         assert.equal(fila.querySelector('.btn-recargar-arca').textContent, 'Estado de ARCA');
     }
-    assert.match(porId(app, 'facturas-tbody').rows[1].textContent, /Factura B - Consumidor Final/);
-    assert.equal(porId(app, 'alta-tipo').querySelector('[value="CONSUMIDOR_FINAL"]').textContent,
-        'Factura B - Consumidor Final');
+    assert.match(porId(app, 'facturas-tbody').rows[1].textContent, /Factura X/);
+    assert.equal(porId(app, 'alta-tipo').querySelector('[value="FACTURA_X"]').textContent,
+        'Factura X');
     assert.match(porId(app, 'facturas-tbody').rows[1].textContent, /No aplica/);
 });
 
-test('editar una B permite guardarla como C sin solicitar CAE', async t => {
-    const interna = { ...factura, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true };
+test('editar una X permite guardarla como C sin solicitar CAE', async t => {
+    const interna = { ...factura, tipoComprobante: 'FACTURA_X', puedeModificar: true };
     const app = await montar({ resolver: llamada => {
         const url = new URL(llamada.url);
         if (url.pathname.endsWith('/facturas') && llamada.method === 'GET') return respuesta(pagina([interna]));
         if (url.pathname.endsWith('/1/detalle')) return respuesta({
-            id: 1, revision: 2, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true, puedeCambiarTipo: true,
+            id: 1, revision: 2, tipoComprobante: 'FACTURA_X', puedeModificar: true, puedeCambiarTipo: true,
             puntoVentaId: 1, puntosVentaHomologacion: [{ id: 2, descripcion: '99001 · Homologación' }],
             clienteId: null, condicionIvaId: 5, tipoMonedaId: 1, listaPrecioId: 1, fechaEmision: '2026-11-20',
             detalles: [{ ...precio, listaPrecioArticuloId: precio.id, cantidad: 1, porcentajeBonificacion: 0 }]
@@ -245,7 +245,7 @@ test('editar una B permite guardarla como C sin solicitar CAE', async t => {
     assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
 });
 
-test('editar una C permite elegir otro punto de venta al convertirla a B', async t => {
+test('editar una C permite elegir otro punto de venta al convertirla a X', async t => {
     const fiscal = { ...factura, tipoComprobante: 'FACTURA_C', puedeModificar: true };
     const app = await montar({ resolver: llamada => {
         const url = new URL(llamada.url);
@@ -259,7 +259,7 @@ test('editar una C permite elegir otro punto de venta al convertirla a B', async
         });
         if (url.pathname.endsWith('/listas-precio-articulos/precio')) return respuesta(precio);
         if (url.pathname.endsWith('/puntos-venta')) return respuesta([...opcion, { id: 2, descripcion: 'Homologación' }]);
-        if (llamada.method === 'PUT') return respuesta({ ...fiscal, tipoComprobante: 'CONSUMIDOR_FINAL' });
+        if (llamada.method === 'PUT') return respuesta({ ...fiscal, tipoComprobante: 'FACTURA_X' });
     } });
     t.after(() => app.cerrar());
     [...app.document.querySelectorAll('button')].find(boton => boton.textContent === 'Editar').click();
@@ -267,7 +267,7 @@ test('editar una C permite elegir otro punto de venta al convertirla a B', async
     const tipo = porId(app, 'alta-tipo');
     const punto = porId(app, 'alta-punto-venta');
     assert.equal(punto.disabled, true);
-    tipo.value = 'CONSUMIDOR_FINAL';
+    tipo.value = 'FACTURA_X';
     tipo.dispatchEvent(new app.window.Event('change'));
     assert.equal(punto.disabled, false);
     punto.value = '1';
@@ -278,19 +278,19 @@ test('editar una C permite elegir otro punto de venta al convertirla a B', async
     const put = app.llamados.find(llamada => llamada.method === 'PUT');
     assert.ok(put);
     const datos = JSON.parse(put.opciones.body);
-    assert.equal(datos.tipoComprobante, 'CONSUMIDOR_FINAL');
+    assert.equal(datos.tipoComprobante, 'FACTURA_X');
     assert.equal(datos.puntoVentaId, 1);
     assert.equal(datos.clienteId, undefined);
     assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
 });
 
-test('editar una B permite conservar el tipo y guardar otro punto activo', async t => {
-    const interna = { ...factura, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true };
+test('editar una X permite conservar el tipo y guardar otro punto activo', async t => {
+    const interna = { ...factura, tipoComprobante: 'FACTURA_X', puedeModificar: true };
     const app = await montar({ resolver: llamada => {
         const url = new URL(llamada.url);
         if (url.pathname.endsWith('/facturas') && llamada.method === 'GET') return respuesta(pagina([interna]));
         if (url.pathname.endsWith('/1/detalle')) return respuesta({
-            id: 1, revision: 2, tipoComprobante: 'CONSUMIDOR_FINAL', puedeModificar: true, puedeCambiarTipo: true,
+            id: 1, revision: 2, tipoComprobante: 'FACTURA_X', puedeModificar: true, puedeCambiarTipo: true,
             puntoVentaId: 1, puntosVentaHomologacion: [], clienteId: null, condicionIvaId: 5, tipoMonedaId: 1,
             listaPrecioId: 1, fechaEmision: '2026-11-20',
             detalles: [{ ...precio, listaPrecioArticuloId: precio.id, cantidad: 1, porcentajeBonificacion: 0 }]
@@ -313,8 +313,126 @@ test('editar una B permite conservar el tipo y guardar otro punto activo', async
     const put = app.llamados.find(llamada => llamada.method === 'PUT');
     assert.ok(put);
     const datos = JSON.parse(put.opciones.body);
-    assert.equal(datos.tipoComprobante, 'CONSUMIDOR_FINAL');
+    assert.equal(datos.tipoComprobante, 'FACTURA_X');
     assert.equal(datos.puntoVentaId, 3);
     assert.equal(datos.clienteId, undefined);
     assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
+});
+
+for (const total of [9_999_999.99, 10_000_000]) {
+    test(`guarda Factura B a consumidor final por ${total} sin solicitar CAE`, async t => {
+        const app = await montar({ resolver: llamada => {
+            if (llamada.method === 'POST' && llamada.url.endsWith('/facturas')) {
+                return respuesta({ ...factura, tipoComprobante: 'FACTURA_B', puedeAutorizar: true }, 201);
+            }
+        } });
+        t.after(() => app.cerrar());
+        const tipo = porId(app, 'alta-tipo');
+        tipo.value = 'FACTURA_B';
+        tipo.dispatchEvent(new app.window.Event('change'));
+        assert.equal(porId(app, 'alta-campo-cliente').hidden, true);
+        assert.equal(porId(app, 'alta-documento').hidden, false);
+        for (const id of ['alta-punto-venta', 'alta-lista-precio', 'alta-moneda']) porId(app, id).value = '1';
+        app.api.setItems([{ precio: { ...precio, precioVenta: total, ivaPorcentaje: 21 }, cantidad: 1, porcentajeBonificacion: 0 }]);
+        app.api.renderizarItems();
+        assert.equal(porId(app, 'items-iva-fila').hidden, false);
+        assert.equal(porId(app, 'items-iva').closest('.tabla-contenedor'), null);
+        assert.equal(porId(app, 'items-total').closest('.tabla-contenedor'), null);
+        assert.match(porId(app, 'items-iva').textContent, /1\.735\.537,19/);
+
+        if (total === 10_000_000) {
+            assert.equal(porId(app, 'alta-documento-tipo').required, true);
+            submit(app, 'form-alta');
+            await flush();
+            assert.equal(app.llamados.some(llamada => llamada.method === 'POST'), false);
+            const documento = porId(app, 'alta-documento-tipo');
+            documento.value = '96';
+            documento.dispatchEvent(new app.window.Event('change'));
+            porId(app, 'alta-documento-numero').value = '12345678';
+        } else {
+            assert.equal(porId(app, 'alta-documento-tipo').required, false);
+        }
+
+        submit(app, 'form-alta');
+        await flush();
+        const post = app.llamados.find(llamada => llamada.method === 'POST');
+        assert.ok(post);
+        const datos = JSON.parse(post.opciones.body);
+        assert.equal(datos.tipoComprobante, 'FACTURA_B');
+        assert.equal(datos.clienteId, undefined);
+        assert.equal(datos.documentoReceptorTipo, total === 10_000_000 ? 96 : undefined);
+        assert.equal(datos.documentoReceptorNumero, total === 10_000_000 ? 12345678 : undefined);
+        assert.equal(app.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
+    });
+}
+
+for (const puedeCambiarTipo of [true, false]) {
+    test(`editar B ${puedeCambiarTipo ? 'antes del intento permite moverla' : 'tras el rechazo conserva el punto'}`, async t => {
+        const fiscal = { ...factura, tipoComprobante: 'FACTURA_B', puedeModificar: true };
+        const precioConIva = { ...precio, ivaPorcentaje: 21 };
+        const app = await montar({ resolver: llamada => {
+            const url = new URL(llamada.url);
+            if (url.pathname.endsWith('/facturas') && llamada.method === 'GET') return respuesta(pagina([fiscal]));
+            if (url.pathname.endsWith('/1/detalle')) return respuesta({
+                id: 1, revision: 2, tipoComprobante: 'FACTURA_B', puedeModificar: true, puedeCambiarTipo,
+                puntoVentaId: 1, puntosVentaHomologacion: puedeCambiarTipo ? [{ id: 2, descripcion: 'Homologación' }] : [],
+                clienteId: null, condicionIvaId: 5, tipoMonedaId: 1, listaPrecioId: 1, fechaEmision: '2026-11-20',
+                documentoReceptorTipo: 96, documentoReceptorNumero: 12345678,
+                detalles: [{ ...precioConIva, listaPrecioArticuloId: precio.id, cantidad: 1, porcentajeBonificacion: 0 }]
+            });
+            if (url.pathname.endsWith('/listas-precio-articulos/precio')) return respuesta(precioConIva);
+            if (url.pathname.endsWith('/puntos-venta')) return respuesta([...opcion, { id: 2, descripcion: 'Punto fiscal' }, { id: 3, descripcion: 'Mostrador' }]);
+            if (llamada.method === 'PUT') return respuesta(fiscal);
+        } });
+        t.after(() => app.cerrar());
+        [...app.document.querySelectorAll('button')].find(boton => boton.textContent === 'Editar').click();
+        await flush();
+
+        const punto = porId(app, 'alta-punto-venta');
+        assert.equal(punto.disabled, !puedeCambiarTipo);
+        assert.equal(punto.value, '1');
+        if (puedeCambiarTipo) {
+            assert.equal([...punto.options].some(opcionPunto => opcionPunto.value === '3'), false);
+            punto.value = '2';
+        }
+        assert.equal(porId(app, 'alta-documento-tipo').value, '96');
+        assert.equal(porId(app, 'alta-documento-numero').value, '12345678');
+        submit(app, 'form-alta');
+        await flush();
+
+        const put = app.llamados.find(llamada => llamada.method === 'PUT');
+        assert.ok(put);
+        const datos = JSON.parse(put.opciones.body);
+        assert.equal(datos.tipoComprobante, 'FACTURA_B');
+        assert.equal(datos.puntoVentaId, puedeCambiarTipo ? 2 : 1);
+        assert.equal(datos.documentoReceptorNumero, 12345678);
+    });
+}
+
+test('Factura B estima el IVA sobre el total a la misma alícuota ya redondeado', async t => {
+    const app = await montar();
+    t.after(() => app.cerrar());
+    const tipo = porId(app, 'alta-tipo');
+    tipo.value = 'FACTURA_B';
+    tipo.dispatchEvent(new app.window.Event('change'));
+    const item = { precio: { ...precio, precioVenta: 0.02, ivaPorcentaje: 21 }, cantidad: 1, porcentajeBonificacion: 0 };
+    app.api.setItems([item, { ...item }]);
+    app.api.renderizarItems();
+    assert.match(porId(app, 'items-total').textContent, /0,04/);
+    assert.match(porId(app, 'items-iva').textContent, /0,01/);
+});
+
+test('Factura B pide identificación al alcanzar el umbral por redondeo de medio centavo', async t => {
+    const app = await montar();
+    t.after(() => app.cerrar());
+    const tipo = porId(app, 'alta-tipo');
+    tipo.value = 'FACTURA_B';
+    tipo.dispatchEvent(new app.window.Event('change'));
+    app.api.setItems([
+        { precio: { ...precio, precioVenta: 9999998.99, ivaPorcentaje: 21 }, cantidad: 1, porcentajeBonificacion: 0 },
+        { precio: { ...precio, precioVenta: 2.01, ivaPorcentaje: 21 }, cantidad: 0.50, porcentajeBonificacion: 0 }
+    ]);
+    app.api.renderizarItems();
+    assert.match(porId(app, 'items-total').textContent, /10\.000\.000,00/);
+    assert.equal(porId(app, 'alta-documento-tipo').required, true);
 });

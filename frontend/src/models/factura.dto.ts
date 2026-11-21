@@ -1,7 +1,12 @@
 // Espejo de los DTOs de Spring Boot: mismos nombres de campos, mismos tipos.
 
 /** Estados posibles de una factura (en Java es un String; acá lo restringimos). */
-export type TipoComprobante = 'FACTURA_C' | 'CONSUMIDOR_FINAL';
+export type TipoComprobante = 'FACTURA_C' | 'FACTURA_B' | 'FACTURA_X';
+type TipoComprobantePersistido = TipoComprobante | 'CONSUMIDOR_FINAL';
+
+export function normalizarTipoComprobante(tipo?: TipoComprobantePersistido | null): TipoComprobante {
+    return tipo === 'CONSUMIDOR_FINAL' ? 'FACTURA_X' : tipo ?? 'FACTURA_C';
+}
 
 export type EstadoFactura = 'PENDIENTE' | 'EMITIDA' | 'ANULADA';
 
@@ -10,7 +15,7 @@ export interface FacturaReporteDTO {
     id: number;
     numeroFactura: number | null;
     revision?: number;
-    tipoComprobante?: TipoComprobante | null;
+    tipoComprobante?: TipoComprobantePersistido | null;
     puedeImprimir?: boolean;
     fechaEmision: string;            // "yyyy-MM-dd" (por el @JsonFormat de Java)
     clienteDenominacion: string;
@@ -51,11 +56,13 @@ export interface FacturaDetalleRequestDTO {
 export interface FacturaEdicionDTO {
     id: number;
     revision: number;
-    tipoComprobante: TipoComprobante | null;
+    tipoComprobante: TipoComprobantePersistido | null;
     puntoVentaId: number;
     clienteId: number | null;
     clienteDenominacion: string | null;
     clienteCuit: string | null;
+    documentoReceptorTipo: number | null;
+    documentoReceptorNumero: number | null;
     condicionIvaId: number;
     tipoMonedaId: number;
     listaPrecioId: number | null;
@@ -79,6 +86,8 @@ export interface FacturaRequestDTO {
     operacionGuardado?: string;
     puntoVentaId?: number;
     clienteId?: number;
+    documentoReceptorTipo?: number;
+    documentoReceptorNumero?: number;
     condicionIvaId?: number;
     tipoMonedaId?: number;
     fechaEmision?: string;           // "yyyy-MM-dd"
@@ -141,4 +150,5 @@ export interface ListaPrecioArticuloExplorerDTO {
     listaPrecioCodigo: string;
     listaPrecioDenominacion: string;
     precioVenta: number;
+    ivaPorcentaje?: number | null;
 }

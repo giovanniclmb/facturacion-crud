@@ -27,4 +27,7 @@ public class Articulo extends AuditoriaApp {
 
     @ManyToOne
     private Marca marca;
+
+    @Column(name = "iva_porcentaje", precision = 5, scale = 2)
+    private java.math.BigDecimal ivaPorcentaje;
 }

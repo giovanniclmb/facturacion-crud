@@ -1,4 +1,4 @@
-import { FacturaReporteDTO } from './factura.dto.js';
+import { FacturaReporteDTO, normalizarTipoComprobante } from './factura.dto.js';
 
 type FacturaPermisos = Pick<FacturaReporteDTO, 'estado' | 'cae'> & Partial<FacturaReporteDTO>;
 
@@ -10,12 +10,13 @@ export function permisosFactura(factura: FacturaPermisos): {
     const autorizada = Boolean(factura.cae?.trim()) || factura.estadoFiscal === 'AUTORIZADO';
     const pendiente = ['PREPARANDO', 'ENVIANDO', 'INCIERTO'].includes(factura.estadoFiscal ?? '');
     const bloqueada = autorizada || pendiente;
+    const interno = normalizarTipoComprobante(factura.tipoComprobante) === 'FACTURA_X';
     return {
         modificar: !bloqueada && factura.estado === 'PENDIENTE' && factura.puedeModificar !== false,
         anular: !bloqueada && factura.estado !== 'ANULADA' && factura.puedeAnular !== false,
         eliminar: !bloqueada && factura.puedeEliminar !== false,
-        autorizar: !bloqueada && factura.estado !== 'ANULADA' && factura.puedeAutorizar === true,
-        consultar: factura.puedeConsultar === true,
+        autorizar: !interno && !bloqueada && factura.estado !== 'ANULADA' && factura.puedeAutorizar === true,
+        consultar: !interno && factura.puedeConsultar === true,
         motivo: autorizada ? 'Factura autorizada por ARCA: no puede modificarse, anularse ni eliminarse.'
             : pendiente ? 'Resultado fiscal pendiente: consulte ARCA antes de modificar la factura.'
             : factura.estado === 'ANULADA' ? 'La factura ya está anulada.'

@@ -26,8 +26,15 @@ public class FacturaRequestDto {
 
     private Long clienteId;
     private Long condicionIvaId;
+    private Integer documentoReceptorTipo;
+    private Long documentoReceptorNumero;
 
     private com.tp.facturacion.model.TipoComprobante tipoComprobante;
+    public void setTipoComprobante(com.tp.facturacion.model.TipoComprobante tipo) {
+        tipoComprobante = tipo == com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL
+                ? com.tp.facturacion.model.TipoComprobante.FACTURA_X : tipo;
+    }
+
     private Long listaPrecioId;
     private Long revision;
     private java.util.UUID operacionGuardado;

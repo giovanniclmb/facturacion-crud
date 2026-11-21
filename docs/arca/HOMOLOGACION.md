@@ -1,8 +1,8 @@
 # Conexión y diagnóstico ARCA en homologación
 
-El proyecto incluye autenticación WSAA, consultas WSFEv1, autorización de Factura C y
+El proyecto incluye autenticación WSAA, consultas WSFEv1, autorización de Facturas B y C y
 recuperación de resultados inciertos, solo en homologación. Arranca con ARCA deshabilitada
-por defecto. Una vez guardada la Factura C, solicitar el CAE manualmente desde Comprobantes.
+por defecto. Una vez guardada la B o la C, solicitar el CAE manualmente desde Comprobantes.
 
 ## Preparación en WSASS
 
@@ -70,7 +70,7 @@ Una respuesta200 contiene:
 | --- | --- |
 | `ambiente` | `HOMOLOGACION` |
 | `puntoVenta` | Número consultado |
-| `tipoComprobante` | 11, Factura C |
+| `tipoComprobante` | 6 para el perfil solo B y 11 para los perfiles solo C y B/C. En modo B/C el diagnóstico consulta únicamente la serie C. |
 | `servidores` | Estado de aplicación, base de datos y autenticación |
 | `ticketVencimiento` | Expiración del ticket, sin token ni sign |
 | `ultimoNumeroAutorizado` | Último número informado por ARCA para ese punto/tipo |
@@ -124,6 +124,29 @@ Verificación del 03/11/2026: suite completa de 140 pruebas backend y 21 fronten
 Incluye 75 casos nuevos ARCA (configuración, HTTP/XML, CMS, cache/WSAA, WSFE y diagnóstico)
 y las 65 pruebas backend anteriores. Las revisiones independientes detectaron dos casos
 de cache que se corrigieron y verificaron antes de la regresión final.
+
+## Emisor y autorización de Factura B
+
+Configurar un único emisor habilitado en homologación. El valor por defecto
+`arca.perfil-emisor=MONOTRIBUTISTA_O_EXENTO` mantiene el flujo de Factura C.
+Para Factura B, configurar `arca.perfil-emisor=RESPONSABLE_INSCRIPTO` y el CUIT,
+certificado, clave, ticket y punto exclusivo correspondientes a ese emisor.
+Al cambiar de CUIT, usar un cache de ticket distinto y conservar los comprobantes
+e intentos anteriores para consulta local.
+
+Para probar Facturas B y C en la misma sesión, usar
+`arca.perfil-emisor=HOMOLOGACION_B_Y_C` con un CUIT y certificado que puedan autorizar
+ambas clases en el entorno de pruebas. Cada clase conserva su propia serie. En ambas,
+guardar deja el comprobante pendiente y el CAE se solicita con **Informar a ARCA**.
+
+La Factura B admite productos en pesos con IVA del 21 % cargado explícitamente.
+El precio de lista se trata como final. Al guardar se calcula el IVA incluido y
+el neto según el total. Para consumidores finales por debajo de $10.000.000 se
+admite un receptor sin documento. Para importes iguales o mayores se pide DNI,
+CUIL o CDI en la propia factura. Guardar y editar son operaciones locales.
+**Informar a ARCA** autoriza la B en una serie independiente de la C y usa los
+datos confirmados del consumidor final. El PDF autorizado incluye CAE, QR e IVA
+contenido. [Datos del comprobante](https://www.arca.gob.ar/fe/emision-autorizacion/datos-comprobantes.asp).
 
 ## Autorización de Factura C
 

@@ -25,6 +25,8 @@ public class IntentoArca {
  @Column(nullable=false,columnDefinition="text") String moneda;
  @Column(nullable=false,precision=18,scale=6) BigDecimal cotizacion;
  @Column(nullable=false,precision=18,scale=2) BigDecimal total;
+ @Column(name="importe_neto",precision=18,scale=2) BigDecimal importeNeto;
+ @Column(name="importe_iva",precision=18,scale=2) BigDecimal importeIva;
  @Column(nullable=false,columnDefinition="text") String hash;
  @Column(nullable=false) Instant creado;
  @Column(nullable=false) Instant actualizado;
@@ -33,7 +35,15 @@ public class IntentoArca {
  @Column(nullable=false,columnDefinition="text") String errores="";
  @Column(nullable=false,columnDefinition="text") String observaciones="";
  @Version long version;
- public Snapshot getSnapshot(){return new Snapshot(concepto,docTipo,docNumero,condicionIva,fecha,moneda,cotizacion,total);}
- void snapshot(Snapshot s){concepto=s.concepto();docTipo=s.docTipo();docNumero=s.docNumero();condicionIva=s.condicionIva();fecha=s.fecha();moneda=s.moneda();cotizacion=s.cotizacion();total=s.total();}
+ public Snapshot getSnapshot() {
+  if (importeNeto == null && importeIva == null) {
+   return new Snapshot(concepto,docTipo,docNumero,condicionIva,fecha,moneda,cotizacion,total);
+  }
+  return new Snapshot(concepto,docTipo,docNumero,condicionIva,fecha,moneda,cotizacion,total,importeNeto,importeIva);
+ }
+ void snapshot(Snapshot s){
+  concepto=s.concepto();docTipo=s.docTipo();docNumero=s.docNumero();condicionIva=s.condicionIva();fecha=s.fecha();
+  moneda=s.moneda();cotizacion=s.cotizacion();total=s.total();importeNeto=s.neto();importeIva=s.iva();
+ }
  @Override public String toString(){return "IntentoArca["+id+","+estado+"]";}
 }

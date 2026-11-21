@@ -46,7 +46,7 @@ class ReservaArcaPostgresTests extends PostgresArcaFixture {
  @Test void propietarioAnteriorNoPuedeEnviarYRechazoConservaHistorial() throws Exception {
   iniciarValidando();
   Reserva original=almacen.reservar(1,serie,Set.of(6),true);
-  Reserva nuevaPropiedad=almacen.recuperarPreparando(1);
+  Reserva nuevaPropiedad=almacen.recuperarPreparando(1, serie.emisor());
   assertTrue(almacen.comenzarEnvio(original,1).isEmpty());
   assertTrue(almacen.comenzarEnvio(nuevaPropiedad,1).isPresent());
   almacen.finalizar(original.intento(),new ResultadoEnvio(false,null,null,List.of(),List.of(new ErrorFiscal(1,"Rechazo. ".repeat(40)))));

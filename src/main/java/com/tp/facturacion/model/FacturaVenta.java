@@ -56,6 +56,12 @@ public class FacturaVenta extends AuditoriaApp {
     @Column(nullable = false)
     private double importeTotal;
 
+    @Column(name = "documento_receptor_tipo")
+    private Integer documentoReceptorTipo;
+
+    @Column(name = "documento_receptor_numero")
+    private Long documentoReceptorNumero;
+
     @Column(name="numero_fiscal")
     private Long numeroFiscal;
     @Column(name="punto_venta_fiscal")

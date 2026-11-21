@@ -104,10 +104,47 @@ class AutorizacionArcaServiceTests {
     }
     @Test void consultarPreparandoNoSolicitaCaeYFrenaEjecutorAnterior() {
         when(almacen.estado(1)).thenReturn(estado(PREPARANDO),estado(FALLIDO_ANTES_ENVIO));
-        when(almacen.recuperarPreparando(1)).thenReturn(reserva);
+        when(almacen.recuperarPreparando(1, serie.emisor())).thenReturn(reserva);
         assertEquals(FALLIDO_ANTES_ENVIO,servicio.consultar(1).estadoFiscal());
         verify(almacen).fallarAntesEnvio(reserva);
         verifyNoInteractions(wsaa,lecturas,cliente);
+    }
+    @Test void pideClaseBYCondicionDeReceptorAUnEmisorResponsableInscripto() {
+        var serieB = new Serie("HOMOLOGACION", serie.emisor(), 1, 6);
+        props.setPerfilEmisor(ArcaProperties.PerfilEmisor.RESPONSABLE_INSCRIPTO);
+        var previaB = new FacturaArcaDto(1, 37L, null, null, null, 1, 6, null, null, null,
+                "Estado", List.of(), List.of(), true, false, true, true, true);
+        var autorizadaB = new FacturaArcaDto(1, 37L, id, AUTORIZADO, 1L, 1, 6, "HOMOLOGACION",
+                "12345678901234", LocalDate.of(2026, 11, 13), "Autorizado", List.of(), List.of(), false,
+                false, false, false, false);
+        when(almacen.estado(1)).thenReturn(previaB, autorizadaB);
+        when(lecturas.condicionesIvaReceptor(ticket, "B")).thenReturn(List.of(
+                new CondicionIvaReceptor(4, "IVA Sujeto Exento", "B"),
+                new CondicionIvaReceptor(5, "Consumidor Final", "B")));
+        when(almacen.reservar(1, serieB, Set.of(4, 5), true, 7L)).thenReturn(reserva);
+        var capturaB = new Snapshot(1, 99, 0, 5, snapshot.fecha(), "PES", BigDecimal.ONE,
+                new BigDecimal("121.00"), new BigDecimal("100.00"), new BigDecimal("21.00"));
+        var envioB = new Envio(id, serieB, 1, capturaB);
+        var respuestaB = new ResultadoEnvio(true, "12345678901234", LocalDate.of(2026, 11, 13), List.of(), List.of());
+        when(almacen.comenzarEnvio(reserva, 1)).thenReturn(Optional.of(envioB));
+        when(cliente.autorizar(ticket, envioB)).thenReturn(respuestaB);
+        assertEquals(autorizadaB, servicio.autorizar(1, true, 7L));
+        verify(lecturas).ultimoAutorizado(ticket, 1, 6);
+        verify(almacen).reservar(1, serieB, Set.of(4, 5), true, 7L);
+        verify(almacen).finalizar(id, respuestaB);
+    }
+    @Test void porDefectoNoAutorizaFacturaB() {
+        when(almacen.estado(1)).thenReturn(new FacturaArcaDto(1, 37L, null, null, null, 1, 6,
+                null, null, null, "Estado", List.of(), List.of(), true, false, true, true, true));
+        assertThrows(com.tp.facturacion.exception.ReglaNegocioException.class, () -> servicio.autorizar(1, true, 7L));
+        verifyNoInteractions(wsaa, lecturas, cliente);
+    }
+    @Test void xNoReservaNiInvocaWsaa() {
+        when(almacen.estado(1)).thenReturn(new FacturaArcaDto(1,37L,null,null,null,1,0,
+                null,null,null,"Comprobante interno",List.of(),List.of(),false,false,true,true,true));
+        assertThrows(com.tp.facturacion.exception.ReglaNegocioException.class, () -> servicio.autorizar(1,true,7L));
+        verifyNoInteractions(wsaa,lecturas,cliente);
+        verify(almacen,never()).reservar(anyLong(),any(),any(),anyBoolean(),any());
     }
     @Test void puntoSinDeclaracionExclusivaNoEnviaNiRecuperaCae() {
         props.setPuntosVentaExclusivos(Set.of());

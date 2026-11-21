@@ -3,6 +3,8 @@
 # Mantener certificado, clave y ticket fuera del repositorio facturacion-crud.
 arca.habilitado=true
 arca.cuit=${ARCA_CUIT:}
+# HOMOLOGACION_B_Y_C habilita ambas clases para un emisor de prueba autorizado.
+arca.perfil-emisor=${ARCA_PERFIL_EMISOR:MONOTRIBUTISTA_O_EXENTO}
 arca.certificado=${ARCA_CERTIFICADO:}
 arca.clave-privada=${ARCA_CLAVE_PRIVADA:}
 arca.ticket-cache=${ARCA_TICKET_CACHE:}

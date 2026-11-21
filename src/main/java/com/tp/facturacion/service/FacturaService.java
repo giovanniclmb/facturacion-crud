@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.tp.facturacion.arca.ArcaProperties;
+import com.tp.facturacion.arca.autorizacion.SnapshotFiscalFactory;
 import com.tp.facturacion.dto.OpcionDto;
 import com.tp.facturacion.dto.FacturaDetalleRequestDto;
 import com.tp.facturacion.dto.FacturaFiltroDto;
@@ -55,6 +56,8 @@ public class FacturaService {
     public static final String ESTADO_PENDIENTE = "PENDIENTE"; // creada, sin CAE
     public static final String ESTADO_EMITIDA = "EMITIDA";     // autorizada por ARCA
     public static final String ESTADO_ANULADA = "ANULADA";
+    private static final BigDecimal IVA_B_PORCENTAJE = new BigDecimal("21");
+    private static final BigDecimal IVA_B_FACTOR = new BigDecimal("1.21");
 
     // Partes fijas de la consulta del reporte, compartidas por la búsqueda y por id
     private static final String SELECT_REPORTE =
@@ -220,13 +223,12 @@ public class FacturaService {
                     return new FacturaEdicionDto.Item(articulo.getId(), precio.getId(), articulo.getCodigo(),
                             articulo.getDenominacion(), lista.getCodigo(), lista.getDenominacion(),
                             detalle.getDescripcion(), detalle.getCantidad(), detalle.getPorcentajeBonificacion(),
-                            detalle.getPrecioUnitario());
+                            detalle.getPrecioUnitario(), detalle.getIvaPorcentaje());
                 }).toList();
         var reporte = obtenerReporte(id);
         boolean puedeCambiarTipo = reporte.isPuedeModificar()
                 && factura.getTipoComprobante() != null && reporte.getEstadoFiscal() == null;
         List<OpcionDto> puntosHomologacion = puedeCambiarTipo
-                && factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL
                 ? puntosVentaHomologacion().stream()
                         .map(punto -> new OpcionDto(punto.getId(), punto.getNumero() + " · " + punto.getDescripcion()))
                         .toList()
@@ -238,7 +240,8 @@ public class FacturaService {
                 factura.getListaPrecio() == null ? null : factura.getListaPrecio().getId(),
                 Instant.ofEpochMilli(factura.getFechaEmision().getTime())
                         .atZone(ZoneId.of("America/Argentina/Mendoza")).toLocalDate(),
-                factura.getObservaciones(), reporte.isPuedeModificar(), puedeCambiarTipo, puntosHomologacion, items);
+                factura.getDocumentoReceptorTipo(), factura.getDocumentoReceptorNumero(), factura.getObservaciones(),
+                reporte.isPuedeModificar(), puedeCambiarTipo, puntosHomologacion, items);
     }
 
     private List<PuntoVenta> puntosVentaHomologacion() {
@@ -247,10 +250,20 @@ public class FacturaService {
                 : puntoVentaRepository.findByNumeroInAndFechaBajaIsNullOrderByNumeroAscIdAsc(numeros);
     }
 
+    private boolean usaConsumidorFinal(TipoComprobante tipo) {
+        return tipo != null && (tipo == TipoComprobante.FACTURA_B || tipo.esInterno());
+    }
+
     private void asignarReceptor(FacturaVenta factura, FacturaRequestDto request) {
-        if (factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL) {
+        boolean esFacturaB = factura.getTipoComprobante() == TipoComprobante.FACTURA_B;
+        if (!esFacturaB && (request.getDocumentoReceptorTipo() != null || request.getDocumentoReceptorNumero() != null)) {
+            throw new IllegalArgumentException("El documento directo del receptor corresponde a una Factura B");
+        }
+        factura.setDocumentoReceptorTipo(request.getDocumentoReceptorTipo());
+        factura.setDocumentoReceptorNumero(request.getDocumentoReceptorNumero());
+        if (usaConsumidorFinal(factura.getTipoComprobante())) {
             if (request.getClienteId() != null) {
-                throw new IllegalArgumentException("El comprobante interno se guarda sin cliente");
+                throw new IllegalArgumentException("El comprobante se guarda sin seleccionar un cliente del padrón");
             }
             factura.setCliente(null);
             factura.setCondicionIva(condicionIvaRepository.findFirstByCodigoAfipAndFechaBajaIsNullOrderById(5)
@@ -302,6 +315,7 @@ public class FacturaService {
 
         // 4. Importes calculados por el backend
         recalcularImportes(factura);
+        validarFacturaB(factura);
         factura.setImporteCobrado(0);
         factura.setImporteSaldo(factura.getImporteTotal());
 
@@ -355,14 +369,15 @@ public class FacturaService {
             if (tipoActual == null && tipoDestino != TipoComprobante.FACTURA_C) {
                 throw new ReglaNegocioException("La factura anterior debe conservar su cliente");
             }
-            if (tipoDestino == TipoComprobante.CONSUMIDOR_FINAL
-                    && tipoActual != TipoComprobante.CONSUMIDOR_FINAL && intentosArca.existsByFacturaId(id)) {
-                throw new ReglaNegocioException("El tipo no puede cambiarse después de solicitar una autorización fiscal");
-            }
             boolean cambiaTipo = tipoActual != null && tipoActual != tipoDestino;
-            boolean mueveFacturaB = tipoActual == TipoComprobante.CONSUMIDOR_FINAL && tipoDestino == tipoActual
-                    && request.getPuntoVentaId() != null && !request.getPuntoVentaId().equals(factura.getPuntoVenta().getId());
-            if (cambiaTipo || mueveFacturaB) {
+            boolean cambiaPunto = request.getPuntoVentaId() != null
+                    && !request.getPuntoVentaId().equals(factura.getPuntoVenta().getId());
+            boolean mueveFacturaX = tipoActual != null && tipoActual.esInterno() && cambiaPunto;
+            boolean mueveFacturaB = tipoActual == TipoComprobante.FACTURA_B && cambiaPunto;
+            if ((cambiaTipo || mueveFacturaB) && intentosArca.existsByFacturaId(id)) {
+                throw new ReglaNegocioException("El tipo y el punto de venta quedan fijos después del primer intento fiscal");
+            }
+            if (cambiaTipo || mueveFacturaX || mueveFacturaB) {
                 asignarPuntoVenta(factura, request.getPuntoVentaId(), tipoDestino);
             }
             factura.setTipoComprobante(tipoDestino);
@@ -373,13 +388,16 @@ public class FacturaService {
                 && !request.getPuntoVentaId().equals(factura.getPuntoVenta().getId())) {
             throw new ReglaNegocioException("El punto de venta de una factura no puede cambiarse");
         }
+        if (!edicionCompleta && (request.getDocumentoReceptorTipo() != null || request.getDocumentoReceptorNumero() != null)) {
+            throw new IllegalArgumentException("Editar el documento requiere una edición completa de Factura B");
+        }
         if (!edicionCompleta && request.getClienteId() != null) {
-            if (factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL)
-                throw new IllegalArgumentException("El comprobante interno se guarda sin cliente");
+            if (usaConsumidorFinal(factura.getTipoComprobante()))
+                throw new IllegalArgumentException("El comprobante se guarda sin seleccionar un cliente del padrón");
             factura.setCliente(buscarPorId(clienteRepository, request.getClienteId(), "el cliente"));
         }
         if (!edicionCompleta && request.getCondicionIvaId() != null
-                && factura.getTipoComprobante() != TipoComprobante.CONSUMIDOR_FINAL) {
+                && !usaConsumidorFinal(factura.getTipoComprobante())) {
             factura.setCondicionIva(buscarPorId(condicionIvaRepository, request.getCondicionIvaId(), "la condición de IVA"));
         }
         if (request.getTipoMonedaId() != null) {
@@ -404,6 +422,8 @@ public class FacturaService {
             recalcularImportes(factura);
             factura.setImporteSaldo(redondear(factura.getImporteTotal() - factura.getImporteCobrado()));
         }
+
+        validarFacturaB(factura);
 
         // Estado
         if (request.getEstado() != null) {
@@ -441,7 +461,7 @@ public class FacturaService {
     private void asignarPuntoVenta(FacturaVenta factura, Long puntoSolicitado, TipoComprobante tipoDestino) {
         PuntoVenta puntoActual = factura.getPuntoVenta();
         Long puntoDestino = puntoSolicitado == null ? puntoActual.getId() : puntoSolicitado;
-        if (tipoDestino == TipoComprobante.FACTURA_C
+        if (!tipoDestino.esInterno()
                 && puntosVentaHomologacion().stream().noneMatch(punto -> punto.getId().equals(puntoDestino))) {
             throw new ReglaNegocioException("Seleccione un punto de venta habilitado para homologación");
         }
@@ -494,26 +514,62 @@ public class FacturaService {
         return detalle;
     }
 
-    /**
-     * Factura C (emisor monotributista): no discrimina IVA.
-     * subtotal = cantidad × precio − bonificación; neto = subtotal; IVA = 0.
-     */
     private void recalcularImportes(FacturaVenta factura) {
+        if (factura.getTipoComprobante() == TipoComprobante.FACTURA_B) {
+            recalcularImportesFacturaB(factura);
+            return;
+        }
         double total = 0;
-
         for (FacturaVentaDetalle detalle : factura.getDetalles()) {
             double bruto = detalle.getCantidad() * detalle.getPrecioUnitario();
             double bonificacion = bruto * detalle.getPorcentajeBonificacion() / 100;
             double subtotal = redondear(bruto - bonificacion);
-
             detalle.setImporteNeto(subtotal);
             detalle.setImporteIva(0);
             detalle.setImporteSubtotal(subtotal);
-
             total += subtotal;
         }
-
         factura.setImporteTotal(redondear(total));
+    }
+
+    private void recalcularImportesFacturaB(FacturaVenta factura) {
+        BigDecimal total = BigDecimal.ZERO;
+        BigDecimal netoAcumulado = BigDecimal.ZERO;
+        for (FacturaVentaDetalle detalle : factura.getDetalles()) {
+            var articulo = detalle.getListaPrecioArticulo().getArticulo();
+            var alicuota = articulo.getIvaPorcentaje();
+            if (alicuota == null || alicuota.compareTo(IVA_B_PORCENTAJE) != 0) {
+                throw new IllegalArgumentException("El artículo " + articulo.getCodigo()
+                        + " requiere la alícuota de IVA del 21 % para Factura B");
+            }
+            BigDecimal factorBonificacion = BigDecimal.ONE.subtract(
+                    BigDecimal.valueOf(detalle.getPorcentajeBonificacion()).movePointLeft(2));
+            BigDecimal subtotal = BigDecimal.valueOf(detalle.getCantidad())
+                    .multiply(BigDecimal.valueOf(detalle.getPrecioUnitario()))
+                    .multiply(factorBonificacion).setScale(2, RoundingMode.HALF_UP);
+            total = total.add(subtotal);
+            // La B de este alcance informa una sola alícuota. Distribuir el redondeo
+            // sobre el acumulado preserva la igualdad entre el detalle y el total fiscal.
+            BigDecimal netoNuevo = total.divide(IVA_B_FACTOR, 2, RoundingMode.HALF_UP);
+            BigDecimal neto = netoNuevo.subtract(netoAcumulado);
+            detalle.setIvaPorcentaje(alicuota);
+            detalle.setImporteNeto(neto.doubleValue());
+            detalle.setImporteIva(subtotal.subtract(neto).doubleValue());
+            detalle.setImporteSubtotal(subtotal.doubleValue());
+            netoAcumulado = netoNuevo;
+        }
+        factura.setImporteTotal(total.doubleValue());
+    }
+
+    private void validarFacturaB(FacturaVenta factura) {
+        if (factura.getTipoComprobante() != TipoComprobante.FACTURA_B) return;
+        if (!"PES".equals(factura.getMoneda().getCodigoAfip())) {
+            throw new IllegalArgumentException("La Factura B de este sistema se emite en pesos argentinos");
+        }
+        BigDecimal total = BigDecimal.valueOf(factura.getImporteTotal());
+        if (total.signum() <= 0) throw new IllegalArgumentException("La Factura B requiere un total positivo");
+        SnapshotFiscalFactory.validarDocumentoFacturaB(
+                factura.getDocumentoReceptorTipo(), factura.getDocumentoReceptorNumero(), total);
     }
 
     private void registrarModificacion(AuditoriaApp entidad, Usuario usuario, Date fecha) {

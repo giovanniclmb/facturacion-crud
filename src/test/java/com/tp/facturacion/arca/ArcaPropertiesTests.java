@@ -34,6 +34,19 @@ class ArcaPropertiesTests {
         assertFalse(ex.getMessage().contains("marcador-secreto"));
         assertFalse(p.toString().contains("marcador-secreto"));
     }
+    @Test void perfilDeHomologacionPermiteFacturaBYCEnLaMismaInstancia() {
+        var p = configuradas(Path.of("/prueba"));
+        p.setPuntosVentaExclusivos(java.util.Set.of(1));
+        p.setPerfilEmisor(ArcaProperties.PerfilEmisor.HOMOLOGACION_B_Y_C);
+
+        assertNull(p.impedimentoAutorizacion(ArcaProperties.FACTURA_B, 1, true));
+        assertNull(p.impedimentoAutorizacion(ArcaProperties.FACTURA_C, 1, true));
+        assertNotNull(p.impedimentoAutorizacion(0, 1, true));
+        assertNotNull(p.impedimentoAutorizacion(ArcaProperties.FACTURA_B, 2, true));
+        assertNotNull(p.impedimentoAutorizacion(ArcaProperties.FACTURA_C, 1, false));
+        assertFalse(p.admiteTipoFiscal(1));
+        assertEquals(ArcaProperties.FACTURA_C, p.tipoFiscalParaDiagnostico());
+    }
     @ParameterizedTest @ValueSource(strings={"https://wsaa.afip.gov.ar/ws/services/LoginCms", "https://usuario@wsaahomo.afip.gov.ar/ws/services/LoginCms", "https://wsaahomo.afip.gov.ar/ws/services/LoginCms?q=secreto", "https://wsaahomo.afip.gov.ar/ws/services/LoginCms#secreto"})
     void rechazaDestinosNoExactos(String uri) {
         var p = configuradas(Path.of("/prueba"));

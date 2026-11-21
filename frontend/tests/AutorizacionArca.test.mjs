@@ -197,3 +197,68 @@ test('el listado explica la indisponibilidad de autorización sin consultar cada
         assert.equal(ui.llamados.filter(l => l.url.includes('/arca')).length, 0);
     } finally { ui.cerrar(); }
 });
+
+test('Factura B confirma consumidor final y muestra su número fiscal al solicitar CAE', async () => {
+    const fiscal = { ...borrador, tipoComprobante: 'FACTURA_B', clienteDenominacion: 'Consumidor Final' };
+    const ui = await montar({ resolver: llamada => {
+        if (llamada.url.includes('/facturas?')) return respuesta(pagina([fiscal]));
+        if (llamada.url.endsWith('/1/detalle')) return respuesta({
+            revision: fiscal.revision, tipoComprobante: 'FACTURA_B',
+            documentoReceptorTipo: null, documentoReceptorNumero: null
+        });
+        if (llamada.url.endsWith('/arca/autorizar')) return respuesta({
+            ...incierto, tipoComprobante: 6, estadoFiscal: 'AUTORIZADO', cae: '12345678901234', numeroFiscal: 7
+        });
+    } });
+    try {
+        const fila = ui.document.querySelector('#facturas-tbody tr');
+        const etiqueta = fila.querySelector('.arca-confirmacion');
+        assert.match(etiqueta.textContent, /Confirmo los datos del consumidor final/);
+        assert.equal(fila.querySelector('.btn-informar-arca').disabled, true);
+        confirmar(ui);
+        fila.querySelector('.btn-informar-arca').click();
+        await flush();
+        assert.match(fila.querySelector('strong').textContent, /Factura B 00001-00000007/);
+    } finally { ui.cerrar(); }
+});
+
+test('la Factura B identificada muestra el documento vigente y permite cancelar el envío', async t => {
+    const fiscal = { ...borrador, tipoComprobante: 'FACTURA_B' };
+    const ui = await montar({ resolver: llamada => {
+        if (llamada.url.includes('/facturas?')) return respuesta(pagina([fiscal]));
+        if (llamada.url.endsWith('/1/detalle')) return respuesta({
+            revision: fiscal.revision, tipoComprobante: 'FACTURA_B',
+            documentoReceptorTipo: 96, documentoReceptorNumero: 12345678
+        });
+    } });
+    t.after(() => ui.cerrar());
+    const original = globalThis.confirm;
+    t.after(() => { globalThis.confirm = original; });
+    let pregunta;
+    globalThis.confirm = texto => { pregunta = texto; return false; };
+    confirmar(ui);
+    ui.document.querySelector('.btn-informar-arca').click();
+    await flush();
+    assert.match(pregunta, /DNI 12345678/);
+    assert.equal(ui.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
+    assert.equal(ui.document.querySelector('.arca-confirmacion input').checked, false);
+    assert.equal(ui.document.querySelector('.btn-eliminar').disabled, false);
+});
+
+test('una Factura B editada en otra pestaña actualiza el listado antes de pedir confirmación', async t => {
+    const fiscal = { ...borrador, tipoComprobante: 'FACTURA_B' };
+    const ui = await montar({ resolver: llamada => {
+        if (llamada.url.includes('/facturas?')) return respuesta(pagina([fiscal]));
+        if (llamada.url.endsWith('/1/detalle')) return respuesta({
+            revision: fiscal.revision + 1, tipoComprobante: 'FACTURA_B',
+            documentoReceptorTipo: 96, documentoReceptorNumero: 12345678
+        });
+    } });
+    t.after(() => ui.cerrar());
+    confirmar(ui);
+    ui.document.querySelector('.btn-informar-arca').click();
+    await flush();
+    assert.equal(ui.confirms, 0);
+    assert.equal(ui.llamados.some(llamada => llamada.url.endsWith('/arca/autorizar')), false);
+    assert.equal(ui.llamados.filter(llamada => llamada.url.includes('/facturas?')).length, 2);
+});

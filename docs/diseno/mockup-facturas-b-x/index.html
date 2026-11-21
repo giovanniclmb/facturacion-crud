@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factura B y Factura X</title>
+<link rel="stylesheet" href="../../../design-system/tokens.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--tinta); font: var(--texto) var(--fuente); }
+  header { padding: 1rem max(1rem, calc((100% - var(--ancho)) / 2)); font-weight: 700; border-bottom: 1px solid var(--borde); background: var(--panel); }
+  main { max-width: var(--ancho); margin: 0 auto; padding: 1rem; }
+  nav { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+  nav a, button { display: inline-flex; align-items: center; min-height: var(--alto-control); padding: .5rem .7rem; font: inherit; color: var(--accion); background: var(--panel); text-decoration: none; border: 1px solid var(--accion); border-radius: var(--radio-control); }
+  nav a[aria-current], button.primario { color: white; background: var(--accion); }
+  button:disabled { opacity: .55; }
+  article { background: var(--panel); border: 1px solid var(--borde); border-radius: var(--radio-panel); overflow: hidden; }
+  h1 { margin: 0; padding: .85rem 1rem; font-size: 1.1rem; background: var(--suave); border-bottom: 1px solid var(--borde); }
+  h2 { margin: 0 0 .5rem; font-size: 1rem; }
+  p { margin: .4rem 0; }
+  .contenido { padding: 1rem; }
+  .campos { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; }
+  label { display: block; font-weight: 600; }
+  select, input:not([type=checkbox]) { display: block; width: 100%; margin-top: .35rem; padding: .45rem .65rem; min-height: var(--alto-control); border: 1px solid var(--borde-control); border-radius: var(--radio-control); color: inherit; background: var(--panel); font: inherit; }
+  fieldset { margin: 1rem 0; padding: .75rem; border: 1px solid var(--borde); border-radius: var(--radio-control); }
+  small { display: block; margin: .35rem 0; color: var(--secundario); }
+  .detalle { margin-top: 1rem; padding: .75rem; background: var(--suave); border: 1px solid var(--borde); }
+  .renglon { display: flex; gap: .65rem; flex-wrap: wrap; justify-content: space-between; }
+  .total { font-size: 1.15rem; font-weight: 700; }
+  .acciones { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+  .estado { display: inline-block; margin-bottom: .35rem; color: var(--aviso-tinta); background: var(--aviso-fondo); padding: .25rem .45rem; border-radius: var(--radio-control); }
+  .confirmar { margin-top: 1rem; font-weight: 400; }
+  .papel { max-width: 790px; padding: clamp(.8rem,4vw,2rem); margin: auto; background: white; border: 1px solid var(--borde); border-radius: 0; }
+  .banda { padding: .5rem; text-align: center; background: var(--suave); border: 1px solid var(--borde); }
+  .cabecera { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: .65rem; border: 1px solid var(--borde); padding: .65rem; }
+  .letra { font-size: 1.9rem; padding: .25rem .55rem; border: 1px solid var(--borde-control); }
+  .derecha { text-align: right; }
+  .pie-pdf { margin-top: 1rem; border-top: 1px solid var(--borde); padding-top: .85rem; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+  .qr { width: 94px; min-height: 94px; padding: .45rem; display: grid; place-items: center; text-align: center; border: 1px dashed var(--borde-control); }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: var(--foco); outline-offset: 2px; }
+  @media (max-width: 650px) { .campos { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header data-brand-name>Facturación de ventas</header>
+<main>
+  <nav aria-label="Vistas de la propuesta">
+    <a id="b" href="?vista=b">Factura B</a><a id="b-documento" href="?vista=b-documento">B con documento</a>
+    <a id="x" href="?vista=x">Factura X</a><a id="comprobantes" href="?vista=comprobantes">Comprobantes</a>
+    <a id="pdf-b" href="?vista=pdf-b">PDF de B</a><a id="pdf-x" href="?vista=pdf-x">PDF de X</a>
+  </nav>
+  <article id="editor" hidden>
+    <h1 id="titulo-editor">Nueva factura</h1>
+    <form class="contenido" id="formulario">
+      <div class="campos">
+        <label>Tipo de comprobante <select id="tipo"><option value="b">Factura B - Consumidor Final</option><option value="x">Factura X</option><option value="c" disabled>Factura C</option></select></label>
+        <label>Punto de venta <select id="punto"><option>99002 · Homologación</option><option>1 · Mostrador</option><option>2 · Sucursal</option></select></label>
+        <label>Lista de precios <select><option>General</option><option>Mayorista</option><option>Costo</option></select></label>
+      </div>
+      <fieldset id="receptor-b">
+        <legend>Consumidor final</legend>
+        <small id="ayuda-documento"></small>
+        <div class="campos">
+          <label>Tipo de documento <select id="tipo-documento"><option value="">Sin documento</option><option>DNI</option><option>CUIL</option><option>CDI</option></select></label>
+          <label id="campo-numero" hidden>Número de documento <input id="documento" type="text" inputmode="numeric"></label>
+        </div>
+      </fieldset>
+      <div class="detalle">
+        <p class="renglon"><span id="articulo">Equipo de ejemplo × 1</span><strong id="importe"></strong></p>
+        <p class="renglon" id="linea-iva"><span>IVA contenido (21 %)</span><span id="iva"></span></p>
+        <p class="renglon total"><span>Total</span><span id="total"></span></p>
+      </div>
+      <div class="acciones"><button id="guardar" class="primario" type="submit">Guardar</button></div>
+    </form>
+  </article>
+  <article id="grilla" hidden>
+    <h1>Comprobantes registrados</h1>
+    <div class="contenido">
+      <div class="renglon"><strong>Factura B · N.º local 42</strong><span class="estado" id="estado" role="status">Pendiente de autorización · Sin CAE</span></div>
+      <p>Consumidor final · $ 121.000,00</p>
+      <label class="confirmar"><input type="checkbox" id="confirmar"> Confirmo que el comprobante corresponde a consumidor final sin identificar.</label>
+      <div class="acciones"><button type="button" id="informar" class="primario" disabled>Informar a ARCA</button><a href="?vista=b">Editar</a></div>
+    </div>
+  </article>
+  <article class="papel" id="comprobante" hidden>
+    <div class="banda" id="leyenda"></div>
+    <div class="cabecera">
+      <div><strong>Emisor de ejemplo</strong><p id="perfil">IVA Responsable Inscripto</p></div>
+      <strong id="letra" class="letra"></strong>
+      <div class="derecha"><strong id="nombre-pdf"></strong><p id="numero-pdf"></p><p>21/11/2026</p></div>
+    </div>
+    <div class="detalle">
+      <p id="receptor-pdf"><strong>A consumidor final</strong></p>
+      <p class="renglon"><span>Equipo de ejemplo × 1</span><span>$ 121.000,00</span></p>
+      <p class="renglon total"><span>Total</span><span>$ 121.000,00</span></p>
+    </div>
+    <div id="autorizacion-pdf" class="pie-pdf">
+      <div class="qr">Ubicación del QR</div>
+      <div><p><strong>Régimen de Transparencia Fiscal al Consumidor</strong></p><p>IVA contenido $ 21.000,00</p><p>Otros impuestos nacionales indirectos $ 0,00</p><p>CAE y vencimiento del comprobante autorizado</p></div>
+    </div>
+  </article>
+</main>
+<script src="../../../design-system/brand.js"></script>
+<script>
+const el = id => document.getElementById(id);
+const vista = new URLSearchParams(location.search).get('vista') || 'b';
+const moneda = new Intl.NumberFormat('es-AR', {style:'currency',currency:'ARS'});
+el(vista)?.setAttribute('aria-current', 'page');
+if (vista === 'comprobantes') {
+  el('grilla').hidden = false;
+  el('confirmar').addEventListener('change', () => el('informar').disabled = !el('confirmar').checked);
+  el('informar').addEventListener('click', () => {
+    el('estado').textContent = 'Solicitud de CAE · Simulación';
+    el('informar').disabled = true;
+  });
+} else if (vista.startsWith('pdf-')) {
+  const fiscal = vista === 'pdf-b';
+  el('comprobante').hidden = false;
+  el('leyenda').textContent = fiscal ? 'Homologación · comprobante de prueba' : 'Comprobante interno · sin validez fiscal';
+  el('letra').textContent = fiscal ? 'B' : 'X';
+  el('nombre-pdf').textContent = fiscal ? 'Factura B' : 'Factura X';
+  el('numero-pdf').textContent = fiscal ? '99002-00000001' : 'N.º local 18';
+  for (const id of ['perfil', 'receptor-pdf', 'autorizacion-pdf']) el(id).hidden = !fiscal;
+} else {
+  el('editor').hidden = false;
+  el('tipo').value = vista === 'x' ? 'x' : 'b';
+  function mostrarEditor() {
+    const interno = el('tipo').value === 'x';
+    const obligatorio = vista === 'b-documento' && !interno;
+    const total = obligatorio ? 12100000 : 121000;
+    el('titulo-editor').textContent = interno ? 'Editar Factura X · N.º local 18' : 'Nueva Factura B';
+    el('receptor-b').hidden = interno;
+    el('tipo-documento').required = obligatorio;
+    el('documento').required = !interno && Boolean(el('tipo-documento').value);
+    el('linea-iva').hidden = interno;
+    el('campo-numero').hidden = interno || !el('tipo-documento').value;
+    el('ayuda-documento').textContent = obligatorio ? 'Documento obligatorio desde $ 10.000.000.' : 'Podés guardar sin documento. El cliente no se registra en el padrón.';
+    el('articulo').textContent = obligatorio ? 'Equipo de ejemplo × 100' : 'Equipo de ejemplo × 1';
+    el('importe').textContent = el('total').textContent = moneda.format(total);
+    el('iva').textContent = moneda.format(obligatorio ? 2100000 : 21000);
+    el('guardar').textContent = interno ? 'Guardar Factura X' : 'Guardar Factura B';
+  }
+  if (vista === 'b-documento') el('tipo-documento').value = 'DNI';
+  function seleccionarPuntoInicial() {
+    el('punto').value = el('tipo').value === 'x' ? '1 · Mostrador' : '99002 · Homologación';
+  }
+  el('tipo').addEventListener('change', () => {
+    seleccionarPuntoInicial();
+    mostrarEditor();
+  });
+  el('tipo-documento').addEventListener('change', mostrarEditor);
+  el('formulario').addEventListener('submit', event => {
+    event.preventDefault();
+    if (el('tipo').value === 'b') location.search = '?vista=comprobantes';
+  });
+  seleccionarPuntoInicial();
+  mostrarEditor();
+}
+</script>
+</body>
+</html>

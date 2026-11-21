@@ -4,20 +4,29 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import com.tp.facturacion.controller.FacturaArcaController;
 import com.tp.facturacion.arca.*;
+import com.tp.facturacion.dto.FacturaDetalleRequestDto;
 import com.tp.facturacion.dto.FacturaRequestDto;
+import com.tp.facturacion.model.TipoComprobante;
 import com.tp.facturacion.service.FacturaService;
 import com.tp.facturacion.exception.ReglaNegocioException;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static com.tp.facturacion.arca.autorizacion.ContratoFiscal.*;
 import static com.tp.facturacion.arca.autorizacion.EstadoIntentoArca.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties={"spring.config.import=", "spring.datasource.url=jdbc:h2:mem:arca-circuito;DB_CLOSE_DELAY=-1",
  "spring.datasource.driver-class-name=org.h2.Driver","spring.datasource.username=sa","spring.datasource.password=",
@@ -86,6 +95,118 @@ class AutorizacionArcaIntegracionTests {
   assertThrows(ReglaNegocioException.class,()->facturas.actualizar(1L,new FacturaRequestDto()));
   assertThrows(ReglaNegocioException.class,()->facturas.eliminar(1L));
   servicio.autorizar(1,true);verify(cliente,times(1)).autorizar(any(),any());
+ }
+ @Test void elMismoPerfilPermiteSolicitarCaeManualParaBYCEnSeriesDistintas() {
+  var anterior = props.getPerfilEmisor();
+  props.setPerfilEmisor(ArcaProperties.PerfilEmisor.HOMOLOGACION_B_Y_C);
+  try {
+   auditada("condicion_iva", "id,codigoAfip,denominacion", "2,5,'Consumidor Final'");
+   jdbc.execute("ALTER TABLE factura_venta ALTER COLUMN id RESTART WITH 100");
+   jdbc.update("UPDATE articulo SET iva_porcentaje=21 WHERE id=1");
+   when(lecturas.condicionesIvaReceptor(any(), eq("B")))
+           .thenReturn(List.of(new CondicionIvaReceptor(5, "Consumidor Final", "B")));
+
+   var solicitud = new FacturaRequestDto();
+   solicitud.setTipoComprobante(TipoComprobante.FACTURA_B);
+   solicitud.setPuntoVentaId(1L);
+   solicitud.setTipoMonedaId(1L);
+   solicitud.setListaPrecioId(1L);
+   var renglon = new FacturaDetalleRequestDto();
+   renglon.setArticuloId(1L);
+   renglon.setCantidad(1.0);
+   solicitud.setDetalles(List.of(renglon));
+   var facturaB = facturas.crear(solicitud);
+   assertEquals("PENDIENTE", facturaB.getEstado());
+   assertNull(facturaB.getCae());
+   assertTrue(facturaB.isPuedeModificar());
+   assertTrue(facturaB.isPuedeAnular());
+   assertTrue(servicio.estado(facturaB.getId()).puedeAutorizar());
+   assertTrue(servicio.estado(1).puedeAutorizar());
+   verifyNoInteractions(wsaa, lecturas, cliente);
+
+   var autorizadaB = servicio.autorizar(facturaB.getId(), true);
+   var autorizadaC = servicio.autorizar(1, true);
+   assertEquals(AUTORIZADO, autorizadaB.estadoFiscal());
+   assertEquals(AUTORIZADO, autorizadaC.estadoFiscal());
+   assertEquals(6, autorizadaB.tipoComprobante());
+   assertEquals(11, autorizadaC.tipoComprobante());
+   assertEquals(1L, autorizadaB.numeroFiscal());
+   assertEquals(1L, autorizadaC.numeroFiscal());
+  } finally {
+   props.setPerfilEmisor(anterior);
+  }
+ }
+ @ParameterizedTest
+ @ValueSource(booleans = {false, true})
+ void bAnonimaFluyeDesdeSolicitudManualHastaCaeConSoapSimulado(boolean perderRespuesta) throws Exception {
+  jdbc.update("UPDATE factura_venta SET tipo_comprobante='FACTURA_B', cliente_id=NULL, importeTotal=121");
+  jdbc.update("UPDATE condicion_iva SET codigoAfip=5");
+  jdbc.update("UPDATE factura_venta_detalle SET precioUnitario=60.5, importeNeto=100, importeIva=21, importeSubtotal=121, iva_porcentaje=21");
+  var fecha = LocalDate.now(ZoneId.of("America/Argentina/Buenos_Aires"))
+          .format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+  String identidad = "<Concepto>1</Concepto><DocTipo>99</DocTipo><DocNro>0</DocNro>"
+          + "<CbteDesde>1</CbteDesde><CbteHasta>1</CbteHasta><CbteFch>"+fecha+"</CbteFch>";
+  String importes = "<ImpTotal>121.00</ImpTotal><ImpTotConc>0.00</ImpTotConc><ImpNeto>100.00</ImpNeto>"
+          + "<ImpOpEx>0.00</ImpOpEx><ImpTrib>0.00</ImpTrib><ImpIVA>21.00</ImpIVA><MonId>PES</MonId><MonCotiz>1</MonCotiz>"
+          + "<CondicionIVAReceptorId>5</CondicionIVAReceptorId><Iva><AlicIva><Id>5</Id><BaseImp>100.00</BaseImp>"
+          + "<Importe>21.00</Importe></AlicIva></Iva>";
+  List<String> operaciones = new ArrayList<>();
+  var anterior = props.getPerfilEmisor();
+  props.setPerfilEmisor(ArcaProperties.PerfilEmisor.RESPONSABLE_INSCRIPTO);
+  try {
+   var soap = new SoapHttpClient((url, accion, cuerpo) -> {
+    String operacion = accion.substring(WsfeClient.NS.length());
+    operaciones.add(operacion);
+    String resultado = switch (operacion) {
+     case "FEParamGetCondicionIvaReceptor" -> "<ResultGet><CondicionIvaReceptor><Id>5</Id>"
+             + "<Desc>Consumidor Final</Desc><Cmp_Clase>B/C</Cmp_Clase></CondicionIvaReceptor></ResultGet>";
+     case "FECompUltimoAutorizado" -> {
+      assertTrue(cuerpo.contains("<CbteTipo>6</CbteTipo>"));
+      yield "<PtoVta>1</PtoVta><CbteTipo>6</CbteTipo><CbteNro>0</CbteNro>";
+     }
+     case "FECAESolicitar" -> {
+      assertTrue(cuerpo.contains("<CbteTipo>6</CbteTipo>"));
+      assertTrue(cuerpo.contains(identidad + importes));
+      if (perderRespuesta) throw new ArcaRemotaException();
+      yield "<FeCabResp><Cuit>" + props.getCuit() + "</Cuit><PtoVta>1</PtoVta><CbteTipo>6</CbteTipo>"
+              + "<CantReg>1</CantReg><Resultado>A</Resultado></FeCabResp><FeDetResp><FECAEDetResponse>"
+              + identidad + "<Resultado>A</Resultado><CAE>12345678901234</CAE><CAEFchVto>" + fecha
+              + "</CAEFchVto></FECAEDetResponse></FeDetResp>";
+     }
+     case "FECompConsultar" -> {
+      assertTrue(cuerpo.contains("<CbteTipo>6</CbteTipo>"));
+      yield "<ResultGet>" + identidad + importes + "<Resultado>A</Resultado><CodAutorizacion>12345678901234"
+              + "</CodAutorizacion><EmisionTipo>CAE</EmisionTipo><FchVto>" + fecha
+              + "</FchVto><PtoVta>1</PtoVta><CbteTipo>6</CbteTipo></ResultGet>";
+     }
+     default -> throw new AssertionError("Operación inesperada " + operacion);
+    };
+    String respuesta = "<s:Envelope xmlns:s='" + SoapHttpClient.NS + "'><s:Body><" + operacion
+            + "Response xmlns='" + WsfeClient.NS + "'><" + operacion + "Result>" + resultado
+            + "</" + operacion + "Result></" + operacion + "Response></s:Body></s:Envelope>";
+    return new RespuestaSoap(200, respuesta.getBytes(StandardCharsets.UTF_8));
+   });
+   var servicioB = new AutorizacionArcaService(props, wsaa, new WsfeClient(props, soap),
+           new WsfeAutorizacionClient(props, soap), almacen);
+   var mvc = MockMvcBuilders.standaloneSetup(new FacturaArcaController(servicioB)).build();
+   mvc.perform(post("/api/facturas/1/arca/autorizar").contentType("application/json")
+           .content("{\"confirmarCuitReceptor\":true,\"revision\":0}"))
+           .andExpect(status().is(perderRespuesta ? 202 : 200))
+           .andExpect(jsonPath("$.estadoFiscal").value(perderRespuesta ? "INCIERTO" : "AUTORIZADO"));
+   if (perderRespuesta) {
+    mvc.perform(post("/api/facturas/1/arca/consultar"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.estadoFiscal").value("AUTORIZADO"));
+   }
+   assertEquals(perderRespuesta
+           ? List.of("FEParamGetCondicionIvaReceptor", "FECompUltimoAutorizado", "FECAESolicitar", "FECompConsultar")
+           : List.of("FEParamGetCondicionIvaReceptor", "FECompUltimoAutorizado", "FECAESolicitar"), operaciones);
+   var reporte = facturas.obtenerReporte(1L);
+   assertEquals(6, reporte.getTipoComprobanteFiscal());
+   assertEquals("12345678901234", reporte.getCae());
+   assertFalse(reporte.isPuedeModificar());
+  } finally {
+   props.setPerfilEmisor(anterior);
+  }
  }
  @Test void timeoutSeRecuperaDesdePersistenciaSinNuevoEnvio() {
   when(cliente.autorizar(any(),any())).thenThrow(new ArcaRemotaException());

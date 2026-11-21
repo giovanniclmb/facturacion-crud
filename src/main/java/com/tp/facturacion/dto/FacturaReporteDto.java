@@ -85,8 +85,13 @@ public class FacturaReporteDto {
             return "Sin número fiscal";
         return String.format("%05d-%08d (tipo %d)", puntoVentaFiscal, numeroFiscal, tipoComprobanteFiscal);
     }
+    public String tipoComprobanteTexto() {
+        if (tipoComprobante == null || tipoComprobante == com.tp.facturacion.model.TipoComprobante.FACTURA_C) return "Factura C";
+        return tipoComprobante.esInterno() ? "Factura X" : "Factura B";
+    }
+
     public String estadoFiscalTexto() {
-        if (tipoComprobante == com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL) return "No aplica";
+        if (tipoComprobante != null && tipoComprobante.esInterno()) return "No aplica";
         return estadoFiscal != null ? estadoFiscal.name() :
                 (cae != null && !cae.isBlank() ? "CAE histórico sin verificar" : "Sin CAE");
     }

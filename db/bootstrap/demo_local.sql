@@ -3,7 +3,9 @@
 \ir 000_esquema_base.sql
 \ir ../migrations/001_arca_autorizacion.sql
 \ir ../migrations/002_correcciones_facturacion.sql
+\ir ../migrations/003_facturas_b_x.sql
 \ir ../demo/catalogos_base.sql
 \ir ../demo/clientes_arca.sql
 \ir ../demo/precios_mayorista.sql
 \ir ../demo/precios_costo.sql
+\ir ../demo/iva_factura_b.sql

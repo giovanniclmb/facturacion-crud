@@ -17,7 +17,7 @@ public class ArcaReporteEnriquecedor {
             var ids=lote.stream().map(FacturaReporteDto::getId).toList();
             var ultimos=new HashMap<Long,EstadoReporteArca>();
             em.createQuery("select new "+EstadoReporteArca.class.getName()+
-                    "(i.factura.id,i.estado,i.numero,i.serie.puntoVenta,i.serie.tipo,i.vencimiento) "
+                    "(i.factura.id,i.estado,i.numero,i.serie.puntoVenta,i.serie.tipo,i.vencimiento,i.serie.ambiente,i.serie.emisor) "
                     +"from IntentoArca i where i.factura.id in :ids order by i.creado desc,i.id desc",EstadoReporteArca.class)
                     .setParameter("ids",ids).getResultList().forEach(i->ultimos.putIfAbsent(i.facturaId(),i));
             for(var fila:lote) {
@@ -31,14 +31,20 @@ public class ArcaReporteEnriquecedor {
                 boolean activo=ultimo!=null&&IntentoArca.ESTADOS_ACTIVOS.contains(ultimo.estado());
                 boolean anulada="ANULADA".equals(fila.getEstado());
                 boolean libre=!conCae&&!activo;
-                boolean interno = fila.getTipoComprobante() == com.tp.facturacion.model.TipoComprobante.CONSUMIDOR_FINAL;
+                int tipo = ArcaProperties.tipoFiscal(fila.getTipoComprobante());
+                boolean coincideEmisor = ultimo == null || props.coincideEmisorHomologacion(ultimo.ambiente(), ultimo.emisor());
+                String impedimento = props.impedimentoAutorizacion(tipo, fila.getPuntoVentaNumero(), coincideEmisor);
                 fila.setPuedeImprimir(true);
-                if(!interno&&ultimo==null&&!conCae) fila.setMensajeArca(!props.isHabilitado() ? "ARCA está deshabilitada" :
-                        (!props.getPuntosVentaExclusivos().contains(fila.getPuntoVentaNumero())
-                                ? "Configure un punto de venta exclusivo para autorizar" : ""));
-                fila.setPuedeAutorizar(!interno&&props.isHabilitado()&&libre&&"PENDIENTE".equals(fila.getEstado())
-                        && fila.getPuntoVentaNumero()!=null && props.getPuntosVentaExclusivos().contains(fila.getPuntoVentaNumero()));
-                fila.setPuedeConsultar(ultimo!=null&&switch(ultimo.estado()) {
+                if (tipo != 0 && !conCae) {
+                    if (ultimo == null) {
+                        fila.setMensajeArca(impedimento == null ? "" : impedimento);
+                    } else if (impedimento != null) {
+                        String detalle = fila.getMensajeArca();
+                        fila.setMensajeArca(detalle == null || detalle.isBlank() ? impedimento : detalle + " · " + impedimento);
+                    }
+                }
+                fila.setPuedeAutorizar(impedimento==null&&libre&&"PENDIENTE".equals(fila.getEstado()));
+                fila.setPuedeConsultar(ultimo!=null&&coincideEmisor&&switch(ultimo.estado()) {
                     case PREPARANDO,ENVIANDO,INCIERTO -> true; default -> false;
                 });
                 fila.setPuedeModificar(libre&&"PENDIENTE".equals(fila.getEstado()));fila.setPuedeAnular(libre&&!anulada);

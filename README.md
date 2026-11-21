@@ -4,10 +4,10 @@ Sistema de facturación de ventas desarrollado como trabajo integrador de Progra
 Expone una **API REST** con **Spring Boot** para consultar, crear, modificar, anular y eliminar
 facturas, genera **reportes en PDF y Excel**, y se consume desde un **frontend web en TypeScript**.
 
-Incluye conexión WSAA/WSFEv1, diagnóstico, autorización de Factura C y recuperación de
+Incluye conexión WSAA/WSFEv1, diagnóstico, autorización de Facturas B y C y recuperación de
 resultados inciertos de **ARCA (ex AFIP)** en homologación. ARCA está deshabilitada por
-defecto. Las Facturas C se guardan localmente y el usuario solicita el CAE desde Comprobantes
-para el punto de venta exclusivo configurado.
+defecto. Las facturas se guardan localmente y el usuario solicita el CAE desde Comprobantes
+para la clase y el punto de venta habilitados en la instalación.
 
 ## Stack
 
@@ -26,15 +26,19 @@ para el punto de venta exclusivo configurado.
 ## Alta, edición e impresión
 
 - **Factura C** exige un cliente del padrón. Una vez guardada, marcar la confirmación del CUIT y pulsar **Informar a ARCA** desde Comprobantes. Un rechazo conserva la factura editable y el motivo. Si el resultado es incierto, usar **Consultar ARCA**.
-- **Factura B - Consumidor Final** genera un comprobante interno sin cliente ni CAE. Al editarla se puede cambiar a otro punto activo. También se puede convertir a Factura C y elegir un punto de homologación. La conversión de C a B está disponible antes del primer intento fiscal registrado y permite elegir un punto activo. En las ediciones se recalculan los ítems a precio vigente.
+- **Factura B - Consumidor Final** se guarda sin seleccionar un cliente. Desde $10.000.000 requiere documento en la propia factura. La autorización manual está disponible para un emisor responsable inscripto configurado en homologación.
+- **Factura X** es editable y se guarda como comprobante interno sin cliente ni CAE. Permite moverla a un punto activo y abrir el PDF con la leyenda **Sin validez fiscal**. La migración identifica como X los comprobantes B internos existentes y conserva sus datos.
+- Antes del primer intento fiscal se puede cambiar entre tipos explícitos. Un cambio a clase fiscal requiere un punto de homologación. Al editar una B antes del primer intento también se puede corregir su punto fiscal. Las ediciones recalculan los ítems a precio vigente.
 - La lista **General** se selecciona inicialmente. Si falta un precio en la lista elegida, se muestra el de General con su origen. Las listas de demostración se cargan con [precios_mayorista.sql](db/demo/precios_mayorista.sql) y luego [precios_costo.sql](db/demo/precios_costo.sql).
 - **Comprobantes registrados** ordena por fecha de emisión descendente. El selector, el desempate por ID y el orden se aplican también a PDF y Excel. **Ver comprobante** abre el PDF individual en todas las filas. Cuando la autorización no está confirmada, el PDF se identifica como copia sin validez fiscal. **Estado de ARCA** muestra el último estado registrado de cada comprobante.
 
-En una base existente, aplicar después de la migración ARCA:
+En una base existente, aplicar solo las migraciones pendientes en orden. Si ya está aplicada la 002, ejecutar:
 
 ```sh
-psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/migrations/002_correcciones_facturacion.sql
+psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/migrations/003_facturas_b_x.sql
 ```
+
+La [carga de IVA de demostración](db/demo/iva_factura_b.sql) marca los artículos de prueba con 21 % y conserva sus precios finales.
 
 Para cargar los dos clientes de demostración después de preparar la base local:
 
@@ -91,7 +95,7 @@ frontend (localhost:3000)                     backend (localhost:8080)
 | GET | `/api/catalogos/{puntos-venta, clientes, condiciones-iva, monedas, articulos}` | Datos para los formularios | 200 |
 | GET | `/api/catalogos/clientes/explorer` | Búsqueda paginada de clientes activos por denominación o CUIT/CUIL | 200 · 400 |
 | GET | `/api/catalogos/listas-precio-articulos/explorer` | Búsqueda paginada por código/artículo/lista de precios activos | 200 · 400 |
-| GET | `/api/arca/diagnostico?puntoVenta=1` | Estado, ticket y último número autorizado de Factura C en homologación | 200 · 400 · 502 · 503 |
+| GET | `/api/arca/diagnostico?puntoVenta=1` | Estado, ticket y último número de la clase del emisor configurado en homologación | 200 · 400 · 502 · 503 |
 | GET | `/api/facturas/{id}/arca` | Estado fiscal persistido, sin llamadas a ARCA | 200 · 404 |
 | POST | `/api/facturas/{id}/arca/autorizar` | Solicitar CAE, JSON `{"confirmarCuitReceptor":true,"revision":2}` | 200 · 202 · 400 · 404 · 409 · 502 · 503 |
 | POST | `/api/facturas/{id}/arca/consultar` | Recuperar resultado sin solicitar CAE | 200 · 202 · 404 · 409 · 502 · 503 |
@@ -198,7 +202,7 @@ POST /api/facturas
 
 ## Reglas de negocio
 
-- **Factura C** (emisor monotributista): no discrimina IVA; `importeNeto = importeSubtotal` e `importeIva = 0`.
+- **Factura C** con emisor monotributista o exento usa `importeNeto = importeSubtotal` e `importeIva = 0`. La **Factura B** usa la alícuota del 21 % cargada explícitamente en cada artículo de esta demo y calcula el IVA incluido en el precio final.
 - **El backend calcula todos los importes.** El precio sale del registro activo de
   ListaPrecioArticulo elegido; el navegador envía sus IDs y la cantidad. Sin selección
   explícita, la API mantiene la regla anterior del último precio con relación, artículo y lista activos.
@@ -235,7 +239,7 @@ createdb facturacion_crud
 psql -X -v ON_ERROR_STOP=1 -d facturacion_crud -f db/bootstrap/demo_local.sql
 ```
 
-El script prepara una **base vacía** con el esquema, las dos migraciones, las listas General, Mayorista y Costo, y los cinco clientes de demostración. Para una base existente, aplicar únicamente las migraciones que le falten. Hibernate usa `ddl-auto=validate`.
+El script prepara una **base vacía** con el esquema, las tres migraciones, las listas General, Mayorista y Costo, los artículos con IVA de demostración y los cinco clientes ficticios. Para una base existente, aplicar únicamente las migraciones que le falten. Hibernate usa `ddl-auto=validate`.
 
 El backend usa `jdbc:postgresql://localhost:5432/facturacion_crud` y toma el usuario de `PGUSER` o del usuario del sistema. Si PostgreSQL usa otro usuario, URL o contraseña, definir `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_URL` y `SPRING_DATASOURCE_PASSWORD` en la terminal del backend según corresponda.
 
@@ -295,7 +299,7 @@ el CSR existente, gestionar WSASS y completar `arca-local.properties` a partir d
 sin datos privados. El comprobante interno y los reportes funcionan sin credenciales con `arca.habilitado=false`.
 
 Para emitir: aplicar la [migración aditiva](docs/arca/MIGRACION_AUTORIZACION.md), configurar
-`arca.puntos-venta-exclusivos` y seguir la [guía de autorización](docs/arca/HOMOLOGACION.md).
+`arca.perfil-emisor`, `arca.puntos-venta-exclusivos` y seguir la [guía de autorización](docs/arca/HOMOLOGACION.md).
 El arranque usa `ddl-auto=validate` y las migraciones crean las restricciones fiscales. No declarar un punto exclusivo si también lo usa otro sistema.
 
 El diagnóstico **no emite CAE ni modifica facturas**. Consulta el estado del servicio,

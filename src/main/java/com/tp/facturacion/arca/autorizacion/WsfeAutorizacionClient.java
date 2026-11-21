@@ -7,7 +7,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Element;
+import static com.tp.facturacion.arca.ArcaProperties.FACTURA_B;
+import static com.tp.facturacion.arca.ArcaProperties.FACTURA_C;
 import static com.tp.facturacion.arca.autorizacion.ContratoFiscal.*;
+import static com.tp.facturacion.arca.autorizacion.SnapshotFiscalFactory.*;
 
 /** WSFE con un comprobante por solicitud; nunca conserva sobres ni credenciales. */
 @Component
@@ -20,13 +23,20 @@ public class WsfeAutorizacionClient {
 
     public ResultadoEnvio autorizar(TicketAcceso ticket,Envio envio) {
         validarSerie(envio.serie(),envio.numero());
-        Snapshot s=envio.snapshot(); validarSnapshot(s);
+        int tipo = envio.serie().tipo();
+        if (!propiedades.admiteTipoFiscal(tipo)) throw new IllegalArgumentException(propiedades.mensajePerfilIncompatible(tipo));
+        Snapshot s=envio.snapshot(); validarSnapshot(s, tipo);
         String identidad=campo("Concepto",s.concepto())+campo("DocTipo",s.docTipo())+campo("DocNro",s.docNumero())+campo("CbteDesde",envio.numero())+campo("CbteHasta",envio.numero())+campo("CbteFch",FECHA.format(s.fecha()));
-        String detalle=identidad+campo("ImpTotal",s.total().toPlainString())+campo("ImpTotConc","0.00")+campo("ImpNeto",s.total().toPlainString())+campo("ImpOpEx","0.00")+campo("ImpTrib","0.00")+campo("ImpIVA","0.00")+campo("MonId","PES")+campo("MonCotiz","1")+campo("CondicionIVAReceptorId",s.condicionIva());
-        String cabecera=campo("CantReg",1)+campo("PtoVta",envio.serie().puntoVenta())+campo("CbteTipo",11);
+        String detalle=identidad+campo("ImpTotal",s.total().toPlainString())+campo("ImpTotConc","0.00")+campo("ImpNeto",s.neto().toPlainString())+campo("ImpOpEx","0.00")+campo("ImpTrib","0.00")+campo("ImpIVA",tipo == FACTURA_B ? s.iva().toPlainString() : "0.00")+campo("MonId","PES")+campo("MonCotiz","1")+campo("CondicionIVAReceptorId",s.condicionIva());
+        if (tipo == FACTURA_B) {
+            detalle += "<Iva><AlicIva>" + campo("Id", ALICUOTA_WSFE_21)
+                    + campo("BaseImp", s.neto().toPlainString()) + campo("Importe", s.iva().toPlainString())
+                    + "</AlicIva></Iva>";
+        }
+        String cabecera=campo("CantReg",1)+campo("PtoVta",envio.serie().puntoVenta())+campo("CbteTipo",tipo);
         Element resultado=llamar("FECAESolicitar",ticket,"<FeCAEReq><FeCabReq>"+cabecera+"</FeCabReq><FeDetReq><FECAEDetRequest>"+detalle+"</FECAEDetRequest></FeDetReq></FeCAEReq>");
         Element cab=elemento(resultado,"FeCabResp");
-        exigir(numero(cab,"Cuit")==Long.parseLong(envio.serie().emisor()) && numero(cab,"PtoVta")==envio.serie().puntoVenta() && numero(cab,"CbteTipo")==11 && numero(cab,"CantReg")==1);
+        exigir(numero(cab,"Cuit")==Long.parseLong(envio.serie().emisor()) && numero(cab,"PtoVta")==envio.serie().puntoVenta() && numero(cab,"CbteTipo")==tipo && numero(cab,"CantReg")==1);
         var detalles=XmlSeguro.hijos(elemento(resultado,"FeDetResp"));exigir(detalles.size()==1);
         Element d=detalles.getFirst();nombre(d,"FECAEDetResponse");comprobarIdentidad(d,envio.numero(),s);
         String estado=texto(cab,"Resultado");exigir(estado.equals(texto(d,"Resultado")) && (estado.equals("A") || estado.equals("R")));
@@ -40,34 +50,68 @@ public class WsfeAutorizacionClient {
     }
     public Consulta consultar(TicketAcceso ticket,Serie serie,long numero) {
         validarSerie(serie,numero);
-        Element resultado=llamar("FECompConsultar",ticket,"<FeCompConsReq>"+campo("CbteTipo",11)+campo("CbteNro",numero)+campo("PtoVta",serie.puntoVenta())+"</FeCompConsReq>");
+        int tipo = serie.tipo();
+        Element resultado=llamar("FECompConsultar",ticket,"<FeCompConsReq>"+campo("CbteTipo",tipo)+campo("CbteNro",numero)+campo("PtoVta",serie.puntoVenta())+"</FeCompConsReq>");
         List<ErrorFiscal> errores=mensajes(resultado,"Errors","Err",ticket);
         Element d=XmlSeguro.opcional(resultado,NS,"ResultGet");
         if(!errores.isEmpty()) {
             exigir(errores.size()==1 && errores.getFirst().codigo()==602 && (d==null || XmlSeguro.hijos(d).isEmpty() && d.getTextContent().isBlank()));
             return new Consulta(Optional.empty());
         }
-        exigir(d!=null);exigir(numero(d,"PtoVta")==serie.puntoVenta() && numero(d,"CbteTipo")==11 && numero(d,"CbteDesde")==numero && numero(d,"CbteHasta")==numero);
+        exigir(d!=null);exigir(numero(d,"PtoVta")==serie.puntoVenta() && numero(d,"CbteTipo")==tipo && numero(d,"CbteDesde")==numero && numero(d,"CbteHasta")==numero);
         exigir(texto(d,"Resultado").equals("A") && texto(d,"EmisionTipo").equals("CAE"));
         BigDecimal total=decimal(d,"ImpTotal");
-        for(String cero:List.of("ImpTotConc","ImpOpEx","ImpTrib","ImpIVA")) exigir(decimal(d,cero).signum()==0);
-        exigir(decimal(d,"ImpNeto").compareTo(total)==0);
+        BigDecimal neto=decimal(d,"ImpNeto"), iva=decimal(d,"ImpIVA");
+        for(String cero:List.of("ImpTotConc","ImpOpEx","ImpTrib")) exigir(decimal(d,cero).signum()==0);
         // Las colecciones fiscales no pueden introducir impuestos ausentes del snapshot.
-        for(String array:List.of("Iva","Tributos","CbtesAsoc","Opcionales","Compradores","PeriodoAsoc","Actividades")) {
-            Element extra=XmlSeguro.opcional(d,NS,array);exigir(extra==null || XmlSeguro.hijos(extra).isEmpty() && extra.getTextContent().isBlank());
+        for(String array:List.of("Tributos","CbtesAsoc","Opcionales","Compradores","PeriodoAsoc","Actividades")) {
+            exigir(vacio(d,array));
         }
-        Snapshot s=new Snapshot(entero(d,"Concepto"),entero(d,"DocTipo"),numero(d,"DocNro"),entero(d,"CondicionIVAReceptorId"),fecha(d,"CbteFch"),texto(d,"MonId"),decimal(d,"MonCotiz"),total);
-        try {validarSnapshot(s);} catch(IllegalArgumentException ex) {throw new ArcaRemotaException();}
+        if (tipo == FACTURA_B) validarAlicuota(d, neto, iva);
+        else exigir(vacio(d, "Iva"));
+        Snapshot s=new Snapshot(entero(d,"Concepto"),entero(d,"DocTipo"),numero(d,"DocNro"),entero(d,"CondicionIVAReceptorId"),fecha(d,"CbteFch"),texto(d,"MonId"),decimal(d,"MonCotiz"),total,neto,iva);
+        try {validarSnapshot(s, tipo);} catch(IllegalArgumentException ex) {throw new ArcaRemotaException();}
         mensajes(d,"Observaciones","Obs",ticket);
         String cae=cae(d,"CodAutorizacion");LocalDate vencimiento=fecha(d,"FchVto");exigir(!vencimiento.isBefore(s.fecha()));
         return new Consulta(Optional.of(new Comprobante(serie,numero,s,cae,vencimiento)));
     }
     private void validarSerie(Serie serie,long numero) {
         propiedades.validarConfiguracion();
-        if(serie==null || !"HOMOLOGACION".equals(serie.ambiente()) || !propiedades.getCuit().equals(serie.emisor()) || serie.tipo()!=11 || serie.puntoVenta()<1 || serie.puntoVenta()>99999 || numero<1 || numero>99999999) throw new IllegalArgumentException("La serie fiscal no coincide con la configuración de homologación.");
+        if(serie==null || !"HOMOLOGACION".equals(serie.ambiente()) || !propiedades.getCuit().equals(serie.emisor())
+                || (serie.tipo()!=FACTURA_C && serie.tipo()!=FACTURA_B) || serie.puntoVenta()<1 || serie.puntoVenta()>99999
+                || numero<1 || numero>99999999) throw new IllegalArgumentException("La serie fiscal no coincide con la configuración de homologación.");
     }
-    private void validarSnapshot(Snapshot s) {
-        if(s==null || s.concepto()!=1 || s.docTipo()!=80 || !SnapshotFiscalFactory.cuitValido(Long.toString(s.docNumero())) || Long.toString(s.docNumero()).equals(propiedades.getCuit()) || s.condicionIva()<1 || s.fecha()==null || !"PES".equals(s.moneda()) || s.cotizacion()==null || s.cotizacion().compareTo(BigDecimal.ONE)!=0 || s.total()==null || s.total().signum()<=0 || s.total().stripTrailingZeros().scale()>2 || s.total().precision()-s.total().scale()>16) throw new IllegalArgumentException("El snapshot fiscal no corresponde a Factura C de productos en PES.");
+    private void validarSnapshot(Snapshot s, int tipo) {
+        if(s==null || s.concepto()!=1 || Long.toString(s.docNumero()).equals(propiedades.getCuit())
+                || s.condicionIva()<1 || s.fecha()==null || !"PES".equals(s.moneda())
+                || s.cotizacion()==null || s.cotizacion().compareTo(BigDecimal.ONE)!=0
+                || !importeValido(s.total()) || s.total().signum()<=0 || !importeValido(s.neto())
+                || !importeValido(s.iva()) || s.neto().add(s.iva()).compareTo(s.total())!=0) {
+            throw new IllegalArgumentException("El snapshot fiscal no corresponde a una factura de productos en PES.");
+        }
+        if (tipo == FACTURA_C) {
+            if (s.docTipo() != 80 || !cuitValido(Long.toString(s.docNumero())) || s.iva().signum() != 0) {
+                throw new IllegalArgumentException("El receptor o el IVA no corresponde a la Factura C.");
+            }
+        } else {
+            boolean anonimo = s.docTipo() == DOCUMENTO_NO_IDENTIFICADO;
+            if (s.condicionIva() != CONDICION_CONSUMIDOR_FINAL || s.neto().compareTo(netoFacturaB(s.total())) != 0
+                    || (anonimo && s.docNumero() != 0)) {
+                throw new IllegalArgumentException("El receptor o el IVA no corresponde a la Factura B.");
+            }
+            validarDocumentoFacturaB(anonimo ? null : s.docTipo(), anonimo ? null : s.docNumero(), s.total());
+        }
+    }
+    private boolean importeValido(BigDecimal importe) {
+        return importe != null && importe.signum() >= 0 && importe.stripTrailingZeros().scale() <= 2
+                && importe.precision() - importe.scale() <= 16;
+    }
+    private void validarAlicuota(Element detalle, BigDecimal neto, BigDecimal iva) {
+        Element alicuotas = elemento(detalle, "Iva");
+        exigir(XmlSeguro.hijos(alicuotas).size() == 1);
+        Element alicuota = elemento(alicuotas, "AlicIva");
+        exigir(entero(alicuota, "Id") == ALICUOTA_WSFE_21 && decimal(alicuota, "BaseImp").compareTo(neto) == 0
+                && decimal(alicuota, "Importe").compareTo(iva) == 0);
     }
     private Element llamar(String operacion,TicketAcceso ticket,String datos) {
         String auth="<Auth>"+campo("Token",ticket.token())+campo("Sign",ticket.sign())+campo("Cuit",propiedades.getCuit())+"</Auth>";

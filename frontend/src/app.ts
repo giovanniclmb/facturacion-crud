@@ -8,7 +8,8 @@ import {
     FacturaReporteDTO,
     FacturaRequestDTO,
     OpcionDTO,
-    PaginaDTO
+    PaginaDTO,
+    normalizarTipoComprobante
 } from './models/factura.dto.js';
 import { FacturaService } from './services/FacturaService.js';
 import { CatalogoService } from './services/CatalogoService.js';
@@ -23,7 +24,13 @@ import { permisosFactura } from './models/permisosFactura.js';
 
 const facturaService = new FacturaService();
 const catalogoService = new CatalogoService();
-const NOMBRE_FACTURA_CONSUMIDOR_FINAL = 'Factura B - Consumidor Final';
+const NOMBRES_COMPROBANTE: Record<TipoComprobante, string> = {
+    FACTURA_B: 'Factura B - Consumidor Final',
+    FACTURA_C: 'Factura C',
+    FACTURA_X: 'Factura X'
+};
+const LIMITE_DOCUMENTO_CONSUMIDOR_FINAL = 10_000_000;
+const IVA_FACTURA_B = 21;
 
 /** Un renglón del formulario de alta (lo que el usuario está cargando). */
 interface ItemFormulario {
@@ -53,6 +60,7 @@ let edicion: {
     revision: number;
     tipoOriginal: TipoComprobante | null;
     puntoOriginal: number;
+    puedeCambiarTipo: boolean;
     puntosVentaHomologacion: OpcionDTO[];
 } | null = null;
 let operacionAlta: string | undefined;
@@ -112,11 +120,18 @@ const altaPuntoVenta = elemento<HTMLSelectElement>('alta-punto-venta');
 const altaCliente = elemento<HTMLInputElement>('alta-cliente');
 const btnAltaCliente = elemento<HTMLButtonElement>('btn-alta-cliente');
 const altaCondicionIva = elemento<HTMLSelectElement>('alta-condicion-iva');
+const altaDocumento = elemento<HTMLFieldSetElement>('alta-documento');
+const altaDocumentoAyuda = elemento<HTMLParagraphElement>('alta-documento-ayuda');
+const altaDocumentoTipo = elemento<HTMLSelectElement>('alta-documento-tipo');
+const altaDocumentoCampoNumero = elemento<HTMLDivElement>('alta-documento-campo-numero');
+const altaDocumentoNumero = elemento<HTMLInputElement>('alta-documento-numero');
 const altaMoneda = elemento<HTMLSelectElement>('alta-moneda');
 const altaFecha = elemento<HTMLInputElement>('alta-fecha');
 const altaObservaciones = elemento<HTMLInputElement>('alta-observaciones');
 const itemsTbody = elemento<HTMLTableSectionElement>('items-tbody');
-const itemsTotal = elemento<HTMLTableCellElement>('items-total');
+const itemsTotal = elemento<HTMLElement>('items-total');
+const itemsIvaFila = elemento<HTMLDivElement>('items-iva-fila');
+const itemsIva = elemento<HTMLElement>('items-iva');
 const btnAgregarItem = elemento<HTMLButtonElement>('btn-agregar-item');
 const btnCrear = elemento<HTMLButtonElement>('btn-crear');
 
@@ -288,14 +303,54 @@ async function cargarCatalogos(): Promise<void> {
 // Ítems del alta (tabla dinámica)
 // ============================================================
 
+function enteroDecimal(valor: number): [bigint, bigint] {
+    const [mantisa, exponente = '0'] = valor.toString().split('e');
+    const decimales = (mantisa.split('.')[1]?.length ?? 0) - Number(exponente);
+    const coeficiente = BigInt(mantisa.replace('.', ''));
+    return decimales < 0
+        ? [coeficiente * (10n ** BigInt(-decimales)), 1n]
+        : [coeficiente, 10n ** BigInt(decimales)];
+}
+
+function cocienteRedondeado(numerador: bigint, divisor: bigint): bigint {
+    return (2n * numerador + divisor) / (2n * divisor);
+}
+
 function subtotalDe(item: ItemFormulario): number {
-    const bruto = item.cantidad * (item.precioNoDisponible ? 0 : (item.precio?.precioVenta ?? 0));
+    const precio = item.precioNoDisponible ? 0 : (item.precio?.precioVenta ?? 0);
+    if (altaTipo.value === 'FACTURA_B') {
+        const bonificacion = item.porcentajeBonificacion;
+        if (![precio, item.cantidad, bonificacion].every(Number.isFinite)
+            || precio < 0 || item.cantidad < 0 || bonificacion < 0 || bonificacion > 100) return 0;
+        const [p, escalaPrecio] = enteroDecimal(precio);
+        const [cantidad, escalaCantidad] = enteroDecimal(item.cantidad);
+        const [descuento, escalaDescuento] = enteroDecimal(bonificacion);
+        const centavos = cocienteRedondeado(p * cantidad * (100n * escalaDescuento - descuento),
+            escalaPrecio * escalaCantidad * escalaDescuento);
+        return Number(centavos) / 100;
+    }
+    const bruto = item.cantidad * precio;
     return redondear(bruto - bruto * item.porcentajeBonificacion / 100);
 }
 
 function actualizarTotal(): void {
-    const total = items.reduce((suma, item) => suma + subtotalDe(item), 0);
-    itemsTotal.textContent = formatearMoneda(redondear(total));
+    const facturaB = altaTipo.value === 'FACTURA_B';
+    const total = redondear(items.reduce((suma, item) => suma + subtotalDe(item), 0));
+    itemsTotal.textContent = formatearMoneda(total);
+    if (facturaB) {
+        const faltaIva = items.some(item => item.precio && item.precio.ivaPorcentaje !== IVA_FACTURA_B);
+        if (faltaIva || !Number.isSafeInteger(Math.round(total * 100))) {
+            itemsIva.textContent = '—';
+        } else {
+            const centavos = BigInt(Math.round(total * 100));
+            const neto = cocienteRedondeado(centavos * 100n, BigInt(100 + IVA_FACTURA_B));
+            itemsIva.textContent = formatearMoneda(Number(centavos - neto) / 100);
+        }
+    }
+    altaDocumentoTipo.required = facturaB && total >= LIMITE_DOCUMENTO_CONSUMIDOR_FINAL;
+    altaDocumentoAyuda.textContent = altaDocumentoTipo.required
+        ? `Documento obligatorio desde ${formatearMoneda(LIMITE_DOCUMENTO_CONSUMIDOR_FINAL)}.`
+        : 'El documento es opcional. El consumidor final no se registra en el padrón.';
 }
 
 function crearInputNumero(valor: number, min: string, max: string | null, step: string,
@@ -451,34 +506,53 @@ function seleccionarGeneral(): void {
     altaLista.value = general?.value ?? '';
 }
 
-function esInterno(): boolean {
-    return altaTipo.value === 'CONSUMIDOR_FINAL';
+function sincronizarDocumento(): void {
+    const conDocumento = altaTipo.value === 'FACTURA_B' && Boolean(altaDocumentoTipo.value);
+    altaDocumentoCampoNumero.hidden = !conDocumento;
+    altaDocumentoNumero.required = conDocumento;
+}
+
+function convierteATipoFiscal(): boolean {
+    return edicion?.tipoOriginal != null && altaTipo.value !== edicion.tipoOriginal && altaTipo.value !== 'FACTURA_X';
 }
 
 function sincronizarTipo(): void {
+    const tipo = altaTipo.value as TipoComprobante;
     for (const id of ['alta-campo-cliente', 'alta-campo-iva']) {
-        elemento(id).hidden = esInterno();
+        elemento(id).hidden = tipo !== 'FACTURA_C';
     }
-    btnCrear.textContent = esInterno() ? 'Guardar Factura B' : 'Guardar Factura C';
+    altaDocumento.hidden = tipo !== 'FACTURA_B';
+    itemsIvaFila.hidden = altaDocumento.hidden;
+    sincronizarDocumento();
+    btnCrear.textContent = tipo === 'FACTURA_B' ? 'Guardar Factura B' : `Guardar ${NOMBRES_COMPROBANTE[tipo]}`;
     ayudaPuntoVenta.hidden = true;
     if (!edicion) return;
 
-    const aFacturaC = edicion.tipoOriginal === 'CONSUMIDOR_FINAL' && !esInterno();
-    const comoFacturaB = esInterno();
-    const puntoEditable = aFacturaC || comoFacturaB;
-    const opciones = aFacturaC ? edicion.puntosVentaHomologacion : puntosVentaCatalogo;
-    const puntoElegido = comoFacturaB && edicion.tipoOriginal === 'CONSUMIDOR_FINAL'
-        ? edicion.puntoOriginal
-        : idSeleccionado(altaPuntoVenta) ?? edicion.puntoOriginal;
+    const convertirAFiscal = convierteATipoFiscal();
+    const comoInterno = tipo === 'FACTURA_X';
+    const { puntoOriginal, puntosVentaHomologacion: puntosFiscales } = edicion;
+    const moverFacturaB = tipo === 'FACTURA_B' && edicion.tipoOriginal === tipo
+        && edicion.puedeCambiarTipo && puntosFiscales.length > 0;
+    const puntoEditable = convertirAFiscal || comoInterno || moverFacturaB;
+    const opciones = convertirAFiscal || moverFacturaB ? [...puntosFiscales] : puntosVentaCatalogo;
+    if (moverFacturaB && !opciones.some(punto => punto.id === puntoOriginal)) {
+        const puntoActual = puntosVentaCatalogo.find(punto => punto.id === puntoOriginal);
+        if (puntoActual) opciones.unshift(puntoActual);
+    }
+    const puntoElegido = comoInterno && edicion.tipoOriginal === 'FACTURA_X'
+        ? puntoOriginal
+        : idSeleccionado(altaPuntoVenta) ?? puntoOriginal;
     llenarSelect(altaPuntoVenta, opciones, 'Seleccione…');
     altaPuntoVenta.value = puntoEditable
         ? (opciones.some(punto => punto.id === puntoElegido) ? String(puntoElegido) : '')
-        : String(edicion.puntoOriginal);
+        : String(puntoOriginal);
     altaPuntoVenta.disabled = !puntoEditable || opciones.length === 0;
     ayudaPuntoVenta.hidden = !puntoEditable;
-    if (comoFacturaB) {
+    if (comoInterno) {
         ayudaPuntoVenta.textContent = 'Podés elegir cualquier punto de venta activo.';
-    } else if (aFacturaC) {
+    } else if (moverFacturaB) {
+        ayudaPuntoVenta.textContent = 'Para mover la factura, seleccioná un punto habilitado para homologación.';
+    } else if (convertirAFiscal) {
         ayudaPuntoVenta.textContent = opciones.length > 0
             ? 'Seleccioná un punto habilitado para homologación.'
             : 'Configurá un punto habilitado para poder homologar.';
@@ -525,14 +599,18 @@ async function editarFactura(factura: FacturaReporteDTO): Promise<void> {
         }
         reiniciarFormularioAlta();
         edicion = {
-            id: detalle.id, revision: detalle.revision, tipoOriginal: detalle.tipoComprobante,
-            puntoOriginal: detalle.puntoVentaId, puntosVentaHomologacion: detalle.puntosVentaHomologacion
+            id: detalle.id, revision: detalle.revision,
+            tipoOriginal: detalle.tipoComprobante == null ? null : normalizarTipoComprobante(detalle.tipoComprobante),
+            puntoOriginal: detalle.puntoVentaId, puedeCambiarTipo: detalle.puedeCambiarTipo,
+            puntosVentaHomologacion: detalle.puntosVentaHomologacion
         };
-        altaTipo.value = detalle.tipoComprobante ?? 'FACTURA_C';
+        altaTipo.value = normalizarTipoComprobante(detalle.tipoComprobante);
         altaTipo.disabled = !detalle.puedeCambiarTipo;
         altaPuntoVenta.value = String(detalle.puntoVentaId);
         altaMoneda.value = String(detalle.tipoMonedaId);
-        altaCondicionIva.value = esInterno() ? '' : String(detalle.condicionIvaId);
+        altaCondicionIva.value = altaTipo.value === 'FACTURA_C' ? String(detalle.condicionIvaId) : '';
+        altaDocumentoTipo.value = detalle.documentoReceptorTipo == null ? '' : String(detalle.documentoReceptorTipo);
+        altaDocumentoNumero.value = detalle.documentoReceptorNumero == null ? '' : String(detalle.documentoReceptorNumero);
         if (detalle.listaPrecioId !== null) altaLista.value = String(detalle.listaPrecioId);
         altaFecha.value = detalle.fechaEmision;
         altaObservaciones.value = detalle.observaciones ?? '';
@@ -576,18 +654,32 @@ function idSeleccionado(select: HTMLSelectElement): number | undefined {
 /** Validaciones rápidas antes de llamar al backend (que igual valida todo). */
 function validarAlta(): string[] {
     const errores: string[] = [];
-    if (edicion?.tipoOriginal === 'CONSUMIDOR_FINAL' && !esInterno() && edicion.puntosVentaHomologacion.length === 0) {
-        errores.push('Configurá un punto habilitado para convertir el comprobante a Factura C');
+    const facturaB = altaTipo.value === 'FACTURA_B';
+    if (convierteATipoFiscal() && edicion?.puntosVentaHomologacion.length === 0) {
+        errores.push('Configurá un punto habilitado para convertir el comprobante');
     } else if (!altaPuntoVenta.value) {
         errores.push('Seleccione el punto de venta');
     }
-    if (!esInterno() && !clienteAlta) errores.push('Seleccione el cliente');
-    if (!esInterno() && !altaCondicionIva.value) errores.push('Seleccione la condición de IVA');
+    if (altaTipo.value === 'FACTURA_C' && !clienteAlta) errores.push('Seleccione el cliente');
+    if (altaTipo.value === 'FACTURA_C' && !altaCondicionIva.value) errores.push('Seleccione la condición de IVA');
+    if (facturaB && altaDocumentoTipo.required && !altaDocumentoTipo.value) {
+        errores.push('Seleccione el documento del consumidor final');
+    }
+    if (facturaB && altaDocumentoTipo.value) {
+        const numero = altaDocumentoNumero.value.trim();
+        const formato = altaDocumentoTipo.value === '96' ? /^\d{1,8}$/ : /^\d{11}$/;
+        if (!formato.test(numero) || Number(numero) === 0) {
+            errores.push('Ingrese un número de documento válido. Use solo dígitos.');
+        }
+    }
     if (!altaLista.value) errores.push('Seleccione la lista de precios');
     if (!altaMoneda.value) errores.push('Seleccione la moneda');
     items.forEach((item, i) => {
         if (item.precioNoDisponible) errores.push(`Ítem ${i + 1}: no hay precio vigente`);
         if (!item.precio) errores.push(`Ítem ${i + 1}: seleccione el artículo y su lista de precios`);
+        if (facturaB && item.precio && item.precio.ivaPorcentaje !== IVA_FACTURA_B) {
+            errores.push(`Ítem ${i + 1}: el artículo requiere IVA del 21 % para Factura B`);
+        }
         if (item.cantidad <= 0) errores.push(`Ítem ${i + 1}: la cantidad debe ser mayor que 0`);
         if (item.porcentajeBonificacion < 0 || item.porcentajeBonificacion > 100) {
             errores.push(`Ítem ${i + 1}: la bonificación debe estar entre 0 y 100`);
@@ -604,14 +696,18 @@ function leerFormularioAlta(): FacturaRequestDTO {
         porcentajeBonificacion: item.porcentajeBonificacion
     }));
 
+    const facturaC = altaTipo.value === 'FACTURA_C';
+    const documento = altaTipo.value === 'FACTURA_B' ? idSeleccionado(altaDocumentoTipo) : undefined;
     return {
         puntoVentaId: idSeleccionado(altaPuntoVenta),
         tipoComprobante: altaTipo.value as TipoComprobante,
         listaPrecioId: idSeleccionado(altaLista),
         revision: edicion?.revision,
         operacionGuardado: operacionAlta,
-        clienteId: esInterno() ? undefined : clienteAlta?.id,
-        condicionIvaId: esInterno() ? undefined : idSeleccionado(altaCondicionIva),
+        clienteId: facturaC ? clienteAlta?.id : undefined,
+        condicionIvaId: facturaC ? idSeleccionado(altaCondicionIva) : undefined,
+        documentoReceptorTipo: documento,
+        documentoReceptorNumero: documento === undefined ? undefined : Number(altaDocumentoNumero.value.trim()),
         tipoMonedaId: idSeleccionado(altaMoneda),
         fechaEmision: altaFecha.value || undefined,
         observaciones: altaObservaciones.value.trim(),
@@ -639,7 +735,7 @@ async function crearFactura(evento: SubmitEvent): Promise<void> {
             ? await facturaService.guardarEdicion(edicion.id, solicitud)
             : await facturaService.crearFactura(solicitud);
         const referencia = `Comprobante N.º local ${guardada.numeroFactura} guardado.`;
-        if (solicitud.tipoComprobante === 'FACTURA_C' && !guardada.cae?.trim()) {
+        if (solicitud.tipoComprobante !== 'FACTURA_X' && !guardada.cae?.trim()) {
             const pasoArca = guardada.puedeAutorizar ? 'Podés solicitar el CAE desde Comprobantes.'
                 : guardada.mensajeArca || 'Revisá el estado de ARCA desde Comprobantes.';
             mostrarMensaje('success', `${referencia} ${pasoArca}`);
@@ -699,16 +795,18 @@ function crearFilaFactura(f: FacturaReporteDTO): HTMLTableRowElement {
     // textContent: los datos de API siempre se presentan como texto.
     const comprobante = celda('Comprobante', 'comprobante');
     const numero = crearElemento('div', 'fila-principal');
-    const interno = f.tipoComprobante === 'CONSUMIDOR_FINAL';
+    const tipo = normalizarTipoComprobante(f.tipoComprobante);
+    const interno = tipo === 'FACTURA_X';
+    const nombreFiscal = tipo === 'FACTURA_B' ? 'Factura B' : 'Factura C';
     const etiquetaNumero = f.estadoFiscal === 'AUTORIZADO' && f.cae && f.puntoVentaFiscal != null && f.numeroFiscal != null
-        ? `Factura C ${String(f.puntoVentaFiscal).padStart(5, '0')}-${String(f.numeroFiscal).padStart(8, '0')}`
-        : `${interno ? NOMBRE_FACTURA_CONSUMIDOR_FINAL : 'Factura C'} · N° local ${f.numeroFactura ?? '—'}`;
+        ? `${nombreFiscal} ${String(f.puntoVentaFiscal).padStart(5, '0')}-${String(f.numeroFiscal).padStart(8, '0')}`
+        : `${NOMBRES_COMPROBANTE[tipo]} · N° local ${f.numeroFactura ?? '—'}`;
     numero.append(crearElemento('strong', '', etiquetaNumero));
     comprobante.append(numero, crearElemento('div', 'fila-secundaria',
         `${formatearFecha(f.fechaEmision)} · ${f.puntoVentaDescripcion}`));
     const cliente = celda('Cliente', 'cliente');
-    cliente.append(crearElemento('div', 'fila-principal', f.clienteDenominacion),
-        crearElemento('div', 'fila-secundaria', f.condicionIva));
+    cliente.append(crearElemento('div', 'fila-principal', interno ? '—' : f.clienteDenominacion));
+    if (!interno) cliente.append(crearElemento('div', 'fila-secundaria', f.condicionIva));
     const importe = celda('Importe', 'numero');
     importe.append(crearElemento('div', 'fila-principal', formatearMoneda(f.importeTotal)),
         crearElemento('div', 'fila-secundaria', `${f.cantidadItems} ${f.cantidadItems === 1 ? 'ítem' : 'ítems'}`));
@@ -754,6 +852,7 @@ function crearFilaFactura(f: FacturaReporteDTO): HTMLTableRowElement {
             else recuperacionesArcaPendientes.delete(f.id);
             actualizarAcciones();
         },
+        recargarListado: () => { void cargarFacturas(); },
         estadoActualizado: (resultado, recargarComprobantes) => {
             // Una recarga puede haber reemplazado la fila mientras el POST estaba pendiente.
             const visible = accionesVisibles.get(f.id);
@@ -765,7 +864,7 @@ function crearFilaFactura(f: FacturaReporteDTO): HTMLTableRowElement {
                 estadoPrincipal.firstElementChild!.textContent = 'Autorizada';
                 estadoPrincipal.firstElementChild!.className = 'badge text-bg-success';
                 if (resultado.numeroFiscal != null) {
-                    numero.firstElementChild!.textContent = `Factura C ${String(resultado.puntoVenta).padStart(5, '0')}-${String(resultado.numeroFiscal).padStart(8, '0')}`;
+                    numero.firstElementChild!.textContent = `${nombreFiscal} ${String(resultado.puntoVenta).padStart(5, '0')}-${String(resultado.numeroFiscal).padStart(8, '0')}`;
                 }
             }
         }
@@ -951,7 +1050,11 @@ ordenFecha.addEventListener('change', () => {
     filtrosAplicados = { ...filtrosAplicados, ordenFecha: ordenFecha.value === 'ASC' ? 'ASC' : 'DESC' };
     void cargarFacturas(0);
 });
-altaTipo.addEventListener('change', sincronizarTipo);
+altaTipo.addEventListener('change', () => {
+    sincronizarTipo();
+    actualizarTotal();
+});
+altaDocumentoTipo.addEventListener('change', sincronizarDocumento);
 altaLista.addEventListener('change', () => { void recotizarItems(); });
 btnCancelarEdicion.addEventListener('click', () => {
     reiniciarFormularioAlta();

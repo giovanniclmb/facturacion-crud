@@ -11,10 +11,14 @@ class WsfeClientTests {
     static final String NS="http://ar.gov.afip.dif.FEV1/";
     final TicketAcceso ticket=new TicketAcceso("TOKEN<&","SIGN>\"",CredencialesPrueba.AHORA.plusSeconds(3600));
     WsfeClient cliente(String operacion,String resultado) {
+        return cliente(operacion, resultado, null);
+    }
+    WsfeClient cliente(String operacion,String resultado,String claseEsperada) {
         return new WsfeClient(ArcaPropertiesTests.configuradas(Path.of("/solo-prueba")),new SoapHttpClient((u,a,x)->{
             assertEquals(ArcaProperties.WSFE_HOMO,u);assertEquals(NS+operacion,a);
             var doc=XmlSeguro.parsear(x);var body=XmlSeguro.exigirElemento(doc.getDocumentElement(),SoapHttpClient.NS,"Body");
             var op=XmlSeguro.exigirElemento(body,NS,operacion);
+            if (claseEsperada != null) assertEquals(claseEsperada, XmlSeguro.texto(op, NS, "ClaseCmp"));
             if(operacion.equals("FEDummy")) assertNull(XmlSeguro.opcional(op,NS,"Auth"));
             else {
                 var auth=XmlSeguro.exigirElemento(op,NS,"Auth");
@@ -24,6 +28,12 @@ class WsfeClientTests {
             }
             return new RespuestaSoap(200,SoapHttpClientTests.sobre("<"+operacion+"Response xmlns='"+NS+"'><"+operacion+"Result>"+resultado+"</"+operacion+"Result></"+operacion+"Response>").getBytes(StandardCharsets.UTF_8));
         }));
+    }
+    @Test void consultaElCatalogoIvaDeFacturaBConLaClaseEnElSoap() {
+        String resultado = "<ResultGet><CondicionIvaReceptor><Id>5</Id><Desc>Consumidor Final</Desc>"
+                + "<Cmp_Clase>B</Cmp_Clase></CondicionIvaReceptor></ResultGet>";
+        assertEquals(new CondicionIvaReceptor(5, "Consumidor Final", "B"),
+                cliente("FEParamGetCondicionIvaReceptor", resultado, "B").condicionesIvaReceptor(ticket, "B").getFirst());
     }
     @Test void dummyYUltimoAutorizadoConCeroValido() {
         assertEquals(new EstadoServidores("OK","OK","OK"),cliente("FEDummy","<AppServer>OK</AppServer><DbServer>OK</DbServer><AuthServer>OK</AuthServer>").estadoServidores());

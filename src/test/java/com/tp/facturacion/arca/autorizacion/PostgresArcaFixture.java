@@ -25,9 +25,12 @@ abstract class PostgresArcaFixture {
  Connection abrirBase() throws SQLException {return DriverManager.getConnection(url,user,password);}
  Connection abrir() throws SQLException {Connection c=abrirBase();c.createStatement().execute("SET search_path TO "+schema);return c;}
  void migrar(Connection c) throws Exception {
+  migrar(c, "001_arca_autorizacion.sql", "002_correcciones_facturacion.sql", "003_facturas_b_x.sql");
+ }
+ void migrar(Connection c, String... archivos) throws Exception {
   c.setAutoCommit(false);
   try {
-   for (String archivo : java.util.List.of("001_arca_autorizacion.sql", "002_correcciones_facturacion.sql")) {
+   for (String archivo : archivos) {
     String sql=Files.readString(Path.of("db/migrations", archivo));
     c.createStatement().execute(sql.replace("BEGIN;", "").replace("COMMIT;", ""));
    }

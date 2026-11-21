@@ -83,11 +83,11 @@ class FacturaCrudConsignasTests {
         auditada("lista_precio", "id,codigo,denominacion", "2,'MAY','Mayorista'");
         auditada("lista_precio_articulo", "id,articulo_id,lista_precio_id,precioVenta", "3,1,2,75");
         mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""
-                {"tipoComprobante":"CONSUMIDOR_FINAL","puntoVentaId":1,"tipoMonedaId":1,"listaPrecioId":2,"operacionGuardado":"b8eb577c-c13b-4e47-95dd-f21bdddedab2",
+                {"tipoComprobante":"FACTURA_X","puntoVentaId":1,"tipoMonedaId":1,"listaPrecioId":2,"operacionGuardado":"b8eb577c-c13b-4e47-95dd-f21bdddedab2",
                  "detalles":[{"articuloId":1,"cantidad":2},{"articuloId":2,"cantidad":2}]}
                 """))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.importeTotal").value(201.0))
-                .andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"));
+                .andExpect(jsonPath("$.tipoComprobante").value("FACTURA_X"));
         mvc.perform(get("/api/facturas/100/arca"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.mensaje").value("No aplica. Es un comprobante interno."));
         assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
@@ -100,9 +100,9 @@ class FacturaCrudConsignasTests {
                 .andReturn().getResponse().getContentAsByteArray();
         try (var lector = new org.openpdf.text.pdf.PdfReader(pdf)) {
             String texto = new org.openpdf.text.pdf.parser.PdfTextExtractor(lector).getTextFromPage(1);
-            assertTrue(texto.contains("Factura B - Consumidor Final"));
+            assertTrue(texto.contains("Factura X"));
             assertTrue(texto.contains("Emisor"));
-            assertTrue(texto.contains("Receptor"));
+            assertFalse(texto.contains("Receptor"));
             assertTrue(texto.contains("Subtotal: $ 201,00"));
             assertTrue(texto.contains("Total: $ 201,00"));
             assertEquals(org.openpdf.text.PageSize.A4.getWidth(), lector.getPageSize(1).getWidth(), 1f);
@@ -133,10 +133,10 @@ class FacturaCrudConsignasTests {
     }
 
     @Test
-    void convierteBEnCConPuntoFiscalYVuelveABAntesDelPrimerIntento() throws Exception {
+    void convierteXEnCConPuntoFiscalYVuelveAXAntesDelPrimerIntento() throws Exception {
         prepararConversion();
         mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content("""
-                {"tipoComprobante":"CONSUMIDOR_FINAL","puntoVentaId":1,"tipoMonedaId":1,"listaPrecioId":1,
+                {"tipoComprobante":"FACTURA_X","puntoVentaId":1,"tipoMonedaId":1,"listaPrecioId":1,
                  "operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547a",
                  "detalles":[{"articuloId":1,"cantidad":1}]}
                 """)).andExpect(status().isCreated());
@@ -166,13 +166,13 @@ class FacturaCrudConsignasTests {
 
         jdbc.update("UPDATE punto_venta SET fechaBaja = CURRENT_TIMESTAMP WHERE id = 1");
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
-                .content(edicion("CONSUMIDOR_FINAL", 1, revision, "")))
+                .content(edicion("FACTURA_X", 1, revision, "")))
                 .andExpect(status().isConflict());
         jdbc.update("UPDATE punto_venta SET fechaBaja = NULL WHERE id = 1");
 
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
-                .content(edicion("CONSUMIDOR_FINAL", 1, revision, "")))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"))
+                .content(edicion("FACTURA_X", 1, revision, "")))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tipoComprobante").value("FACTURA_X"))
                 .andExpect(jsonPath("$.id").value(100)).andExpect(jsonPath("$.numeroFactura").value(2));
         assertEquals(1L, jdbc.queryForObject("SELECT punto_venta_id FROM factura_venta WHERE id=100", Long.class));
         assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
@@ -180,11 +180,11 @@ class FacturaCrudConsignasTests {
     }
 
     @Test
-    void cambiarPuntoEnUnaFacturaBConservaElTipoYNumeraEnElDestino() throws Exception {
+    void cambiarPuntoEnUnaFacturaXConservaElTipoYNumeraEnElDestino() throws Exception {
         prepararConversion();
         auditada("punto_venta", "id,numero,descripcion", "3,3,'Sucursal'");
         String altaB = """
-                {"tipoComprobante":"CONSUMIDOR_FINAL","puntoVentaId":%d,"tipoMonedaId":1,"listaPrecioId":1,
+                {"tipoComprobante":"FACTURA_X","puntoVentaId":%d,"tipoMonedaId":1,"listaPrecioId":1,
                  "operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547%d",
                  "detalles":[{"articuloId":1,"cantidad":1}]}
                 """;
@@ -196,14 +196,14 @@ class FacturaCrudConsignasTests {
 
         jdbc.update("UPDATE punto_venta SET fechaBaja = CURRENT_TIMESTAMP WHERE id = 3");
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
-                .content(edicion("CONSUMIDOR_FINAL", 3, 0, "")))
+                .content(edicion("FACTURA_X", 3, 0, "")))
                 .andExpect(status().isConflict());
         jdbc.update("UPDATE punto_venta SET fechaBaja = NULL WHERE id = 3");
 
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
-                .content(edicion("CONSUMIDOR_FINAL", 3, 0, "")))
+                .content(edicion("FACTURA_X", 3, 0, "")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(100))
-                .andExpect(jsonPath("$.tipoComprobante").value("CONSUMIDOR_FINAL"))
+                .andExpect(jsonPath("$.tipoComprobante").value("FACTURA_X"))
                 .andExpect(jsonPath("$.numeroFactura").value(2));
         assertEquals(3L, jdbc.queryForObject("SELECT punto_venta_id FROM factura_venta WHERE id=100", Long.class));
         assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
@@ -230,7 +230,7 @@ class FacturaCrudConsignasTests {
                 .andExpect(jsonPath("$.puedeModificar").value(true))
                 .andExpect(jsonPath("$.puedeCambiarTipo").value(false));
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
-                .content(edicion("CONSUMIDOR_FINAL", 2, 0, "")))
+                .content(edicion("FACTURA_X", 2, 0, "")))
                 .andExpect(status().isConflict());
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
                 .content(edicion("FACTURA_C", 2, 0, ",\"clienteId\":2,\"condicionIvaId\":1")))
@@ -246,9 +246,53 @@ class FacturaCrudConsignasTests {
         mvc.perform(get("/api/facturas/100/detalle")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.puedeCambiarTipo").value(false));
         mvc.perform(put("/api/facturas/100").contentType(MediaType.APPLICATION_JSON)
-                .content(edicion("CONSUMIDOR_FINAL", 1, 0, "")))
+                .content(edicion("FACTURA_X", 1, 0, "")))
                 .andExpect(status().isConflict());
         assertEquals(1L, jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
+    }
+
+    @Test
+    void facturaBAnonimaIncluyeIvaSinSolicitarCae() throws Exception {
+        prepararConversion();
+        jdbc.update("UPDATE articulo SET iva_porcentaje = 21 WHERE id = 1");
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON)
+                .content(facturaB(1, "")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.tipoComprobante").value("FACTURA_B"))
+                .andExpect(jsonPath("$.importeTotal").value(100)).andExpect(jsonPath("$.estado").value("PENDIENTE"));
+        assertEquals(82.64, jdbc.queryForObject("SELECT importeNeto FROM factura_venta_detalle WHERE factura_id=100", Double.class));
+        assertEquals(17.36, jdbc.queryForObject("SELECT importeIva FROM factura_venta_detalle WHERE factura_id=100", Double.class));
+        assertNull(jdbc.queryForObject("SELECT cliente_id FROM factura_venta WHERE id=100", Long.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM arca_intento", Integer.class));
+    }
+
+    @Test
+    void facturaBExigeDocumentoEnElUmbralYLoGuardaSinCliente() throws Exception {
+        prepararConversion();
+        jdbc.update("UPDATE articulo SET iva_porcentaje = 21 WHERE id = 1");
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content(facturaB(100000, "")))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON)
+                .content(facturaB(100000, ",\"documentoReceptorTipo\":96,\"documentoReceptorNumero\":12345678")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.importeTotal").value(10000000));
+        mvc.perform(get("/api/facturas/100/detalle"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.documentoReceptorTipo").value(96))
+                .andExpect(jsonPath("$.documentoReceptorNumero").value(12345678))
+                .andExpect(jsonPath("$.detalles[0].ivaPorcentaje").value(21));
+    }
+
+    @Test
+    void facturaBExigeIvaExplicitoPorArticulo() throws Exception {
+        prepararConversion();
+        mvc.perform(post("/api/facturas").contentType(MediaType.APPLICATION_JSON).content(facturaB(1, "")))
+                .andExpect(status().isBadRequest());
+    }
+
+    private String facturaB(int cantidad, String documento) {
+        return """
+                {"tipoComprobante":"FACTURA_B","puntoVentaId":2,"tipoMonedaId":1,"listaPrecioId":1,
+                 "operacionGuardado":"1be85e76-18f2-4215-8c0a-e34284ae547a",
+                 "detalles":[{"articuloId":1,"cantidad":%d}]%s}
+                """.formatted(cantidad, documento);
     }
 
     private void prepararConversion() {

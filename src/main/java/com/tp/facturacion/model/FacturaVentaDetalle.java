@@ -37,6 +37,9 @@ public class FacturaVentaDetalle extends EntityId {
     private double importeNeto;
     private double importeIva;
 
+    @Column(name = "iva_porcentaje", precision = 5, scale = 2)
+    private java.math.BigDecimal ivaPorcentaje;
+
     @Column(nullable = false)
     private double importeSubtotal;
 }

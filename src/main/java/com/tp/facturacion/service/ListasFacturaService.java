@@ -59,7 +59,7 @@ public class ListasFacturaService {
         var lista = precio.getListaPrecio();
         return new com.tp.facturacion.dto.ListaPrecioArticuloExplorerDto(precio.getId(), articulo.getId(),
                 articulo.getCodigo(), articulo.getDenominacion(), lista.getCodigo(), lista.getDenominacion(),
-                precio.getPrecioVenta());
+                precio.getPrecioVenta(), articulo.getIvaPorcentaje());
     }
 
     private java.util.Optional<ListaPrecioArticulo> precioActivo(Long articulo, Long lista) {

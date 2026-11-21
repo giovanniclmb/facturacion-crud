@@ -42,8 +42,9 @@ public class ArcaDiagnosticoService {
             puntosVerificados = false;
         }
 
-        long ultimo = wsfe.ultimoAutorizado(ticket, puntoVenta, 11);
-        return new ArcaDiagnosticoDto("HOMOLOGACION", puntoVenta, 11, servidores,
+        int tipo = propiedades.tipoFiscalParaDiagnostico();
+        long ultimo = wsfe.ultimoAutorizado(ticket, puntoVenta, tipo);
+        return new ArcaDiagnosticoDto("HOMOLOGACION", puntoVenta, tipo, servidores,
                 ticket.expiracion(), ultimo, puntosVerificados,
                 puntosVerificados ? java.util.List.of() : java.util.List.of(
                         "ARCA devolvió 602 (Sin Resultados) al consultar puntos de venta. "

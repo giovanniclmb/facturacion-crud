@@ -2,6 +2,7 @@ package com.tp.facturacion.reporte;
 
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.qrcode.QRCodeWriter;
+import com.tp.facturacion.arca.ArcaProperties;
 import com.tp.facturacion.arca.autorizacion.EstadoIntentoArca;
 import com.tp.facturacion.arca.autorizacion.IntentoArca;
 import com.tp.facturacion.arca.autorizacion.IntentoArcaRepository;
@@ -47,14 +48,16 @@ public class ComprobantePdfExporter {
 
     private final FacturaVentaRepository facturas;
     private final IntentoArcaRepository intentos;
+    private final ArcaProperties arca;
     private final String emisor;
     private final String domicilio;
 
-    public ComprobantePdfExporter(FacturaVentaRepository facturas, IntentoArcaRepository intentos,
+    public ComprobantePdfExporter(FacturaVentaRepository facturas, IntentoArcaRepository intentos, ArcaProperties arca,
             @Value("${facturacion.emisor-denominacion:}") String emisor,
             @Value("${facturacion.emisor-domicilio:}") String domicilio) {
         this.facturas = facturas;
         this.intentos = intentos;
+        this.arca = arca;
         this.emisor = emisor;
         this.domicilio = domicilio;
     }
@@ -63,9 +66,12 @@ public class ComprobantePdfExporter {
     public byte[] exportar(Long id) {
         var factura = facturas.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException("No existe la factura con id " + id));
-        boolean interno = factura.getTipoComprobante() == TipoComprobante.CONSUMIDOR_FINAL;
+        TipoComprobante tipo = factura.getTipoComprobante();
+        boolean interno = tipo != null && tipo.esInterno();
+        boolean facturaB = tipo == TipoComprobante.FACTURA_B;
         IntentoArca ultimo = interno ? null : intentos.findFirstByFacturaIdOrderByCreadoDescIdDesc(id).orElse(null);
-        IntentoArca fiscal = tieneAutorizacion(factura, ultimo) ? ultimo : null;
+        IntentoArca fiscal = tieneAutorizacion(factura, ultimo, facturaB ? 6 : 11) ? ultimo : null;
+        var snapshot = fiscal == null ? null : fiscal.getSnapshot();
 
         var salida = new ByteArrayOutputStream();
         var pdf = new Document(PageSize.A4, 38, 38, 42, 42);
@@ -73,12 +79,12 @@ public class ComprobantePdfExporter {
         pdf.open();
         try {
             pdf.add(cabecera(factura, fiscal, interno));
-            pdf.add(receptor(factura, fiscal, ultimo, interno));
+            if (!interno) pdf.add(receptor(factura, fiscal, ultimo, facturaB));
 
             var importes = NumberFormat.getNumberInstance(Locale.forLanguageTag("es-AR"));
             importes.setMinimumFractionDigits(2);
             importes.setMaximumFractionDigits(2);
-            String codigoMoneda = factura.getMoneda().getCodigoAfip();
+            String codigoMoneda = snapshot == null ? factura.getMoneda().getCodigoAfip() : snapshot.moneda();
             String moneda = "PES".equals(codigoMoneda) ? "$ " : codigoMoneda + " ";
             var tabla = new PdfPTable(new float[]{4, 1, 1.6f, 1.2f, 1.7f});
             tabla.setWidthPercentage(100);
@@ -100,8 +106,15 @@ public class ComprobantePdfExporter {
                 subtotal = subtotal.add(BigDecimal.valueOf(item.getImporteSubtotal()));
             }
             pdf.add(tabla);
+            var total = snapshot == null ? BigDecimal.valueOf(factura.getImporteTotal()) : snapshot.total();
             pdf.add(totales(moneda + importes.format(subtotal),
-                    moneda + importes.format(factura.getImporteTotal())));
+                    moneda + importes.format(total)));
+            if (facturaB) {
+                var iva = snapshot == null ? factura.getDetalles().stream()
+                        .map(item -> BigDecimal.valueOf(item.getImporteIva()))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add) : snapshot.iva();
+                pdf.add(transparenciaFiscal(moneda + importes.format(iva), moneda + importes.format(BigDecimal.ZERO)));
+            }
             if (fiscal != null) pdf.add(autorizacion(fiscal));
         } finally {
             pdf.close();
@@ -122,12 +135,17 @@ public class ComprobantePdfExporter {
         tabla.addCell(leyenda);
 
         var datosEmisor = bloque("Emisor");
-        agregarLinea(datosEmisor, emisor, false);
-        agregarLinea(datosEmisor, domicilio.isBlank() ? "" : "Domicilio: " + domicilio, false);
+        if (fiscal == null || fiscal.getSerie().getEmisor().equals(arca.getCuit())) {
+            agregarLinea(datosEmisor, emisor, false);
+            agregarLinea(datosEmisor, domicilio.isBlank() ? "" : "Domicilio: " + domicilio, false);
+        }
         if (fiscal != null) agregarLinea(datosEmisor, "CUIT emisor: " + fiscal.getSerie().getEmisor(), false);
+        if (fiscal != null && factura.getTipoComprobante() == TipoComprobante.FACTURA_B)
+            agregarLinea(datosEmisor, "IVA Responsable Inscripto", false);
         tabla.addCell(datosEmisor);
 
-        var letra = celda(interno ? "B" : "C", false, true, 25);
+        String clase = interno ? "X" : factura.getTipoComprobante() == TipoComprobante.FACTURA_B ? "B" : "C";
+        var letra = celda(clase, false, true, 25);
         letra.setHorizontalAlignment(Element.ALIGN_CENTER);
         letra.setVerticalAlignment(Element.ALIGN_MIDDLE);
         tabla.addCell(letra);
@@ -135,32 +153,50 @@ public class ComprobantePdfExporter {
         String numero = fiscal == null
                 ? "N.º local " + (factura.getNumero() == null ? factura.getId() : factura.getNumero())
                 : String.format(Locale.ROOT, "%05d-%08d", fiscal.getSerie().getPuntoVenta(), fiscal.getNumero());
-        var identificacion = bloque(interno ? "Factura B - Consumidor Final" : "Factura C", true);
+        var identificacion = bloque("Factura " + clase, true);
         agregarLinea(identificacion, numero, true);
-        agregarLinea(identificacion, "Fecha de emisión: " + FECHA.format(
-                Instant.ofEpochMilli(factura.getFechaEmision().getTime())), true);
+        String fecha = fiscal == null ? FECHA.format(Instant.ofEpochMilli(factura.getFechaEmision().getTime()))
+                : FECHA.format(fiscal.getSnapshot().fecha());
+        agregarLinea(identificacion, "Fecha de emisión: " + fecha, true);
+        if ("ANULADA".equals(factura.getEstado()))
+            agregarLinea(identificacion, "Estado del comprobante: Anulado", true);
         tabla.addCell(identificacion);
         return tabla;
     }
 
-    private PdfPTable receptor(FacturaVenta factura, IntentoArca fiscal, IntentoArca ultimo, boolean interno) {
+    private PdfPTable receptor(FacturaVenta factura, IntentoArca fiscal, IntentoArca ultimo, boolean facturaB) {
         var tabla = new PdfPTable(1);
         tabla.setWidthPercentage(100);
         tabla.setKeepTogether(true);
 
         var bloque = bloque("Receptor");
-        var cliente = factura.getCliente();
-        String denominacion = cliente == null ? "Consumidor final" : cliente.getDenominacion();
-        if (fiscal != null) denominacion += " · CUIT " + fiscal.getDocNumero();
-        agregarLinea(bloque, denominacion, false);
+        if (facturaB) {
+            agregarLinea(bloque, "A CONSUMIDOR FINAL", false);
+            Integer tipoDoc = fiscal == null ? factura.getDocumentoReceptorTipo() : Integer.valueOf(fiscal.getSnapshot().docTipo());
+            Long numeroDoc = fiscal == null ? factura.getDocumentoReceptorNumero() : Long.valueOf(fiscal.getSnapshot().docNumero());
+            if (tipoDoc != null && numeroDoc != null && tipoDoc != 99) {
+                String documento = switch (tipoDoc) {
+                    case 96 -> "DNI";
+                    case 86 -> "CUIL";
+                    case 87 -> "CDI";
+                    case 80 -> "CUIT";
+                    default -> "Documento";
+                };
+                agregarLinea(bloque, documento + " " + numeroDoc, false);
+            }
+        } else {
+            var cliente = factura.getCliente();
+            String denominacion = cliente == null ? "Consumidor final" : cliente.getDenominacion();
+            if (fiscal != null) denominacion += " · CUIT " + fiscal.getSnapshot().docNumero();
+            agregarLinea(bloque, denominacion, false);
+        }
         agregarLinea(bloque, "Condición de IVA: " + factura.getCondicionIva().getDenominacion(), false);
         if (fiscal == null) {
-            agregarLinea(bloque, "Estado de ARCA: " + estadoSinAutorizacion(factura, ultimo, interno), false);
+            agregarLinea(bloque, "Estado de ARCA: " + estadoSinAutorizacion(factura, ultimo), false);
             if (factura.getMotivoRechazo() != null && !factura.getMotivoRechazo().isBlank()) {
                 agregarLinea(bloque, "Motivo: " + factura.getMotivoRechazo(), false);
             }
         }
-        if ("ANULADA".equals(factura.getEstado())) agregarLinea(bloque, "Estado del comprobante: Anulado", false);
         tabla.addCell(bloque);
         return tabla;
     }
@@ -175,6 +211,19 @@ public class ComprobantePdfExporter {
         var destacado = celda("Total: " + total, true, true, 14);
         destacado.setBackgroundColor(FONDO_CLARO);
         tabla.addCell(destacado);
+        return tabla;
+    }
+
+    private PdfPTable transparenciaFiscal(String iva, String otrosImpuestos) {
+        var tabla = new PdfPTable(1);
+        tabla.setWidthPercentage(62);
+        tabla.setHorizontalAlignment(Element.ALIGN_LEFT);
+        tabla.setSpacingBefore(13);
+        tabla.setKeepTogether(true);
+        var contenido = bloque("Régimen de Transparencia Fiscal al Consumidor (Ley 27.743)");
+        agregarLinea(contenido, "IVA contenido: " + iva, false);
+        agregarLinea(contenido, "Otros impuestos nacionales indirectos: " + otrosImpuestos, false);
+        tabla.addCell(contenido);
         return tabla;
     }
 
@@ -200,14 +249,14 @@ public class ComprobantePdfExporter {
         bloque.addElement(parrafo);
     }
 
-    private boolean tieneAutorizacion(FacturaVenta factura, IntentoArca intento) {
+    private boolean tieneAutorizacion(FacturaVenta factura, IntentoArca intento, int clase) {
         return intento != null && intento.getEstado() == EstadoIntentoArca.AUTORIZADO
+                && intento.getSerie().getTipo() == clase
                 && intento.getNumero() != null && intento.getVencimiento() != null
                 && intento.getCae() != null && intento.getCae().equals(factura.getCae());
     }
 
-    private String estadoSinAutorizacion(FacturaVenta factura, IntentoArca intento, boolean interno) {
-        if (interno) return "No aplica";
+    private String estadoSinAutorizacion(FacturaVenta factura, IntentoArca intento) {
         if (factura.getCae() != null && !factura.getCae().isBlank()) return "CAE histórico sin verificar";
         if (intento == null) return "Sin CAE";
         return switch (intento.getEstado()) {
@@ -239,11 +288,13 @@ public class ComprobantePdfExporter {
     static String urlQr(IntentoArca intento) {
         var serie = intento.getSerie();
         var datos = intento.getSnapshot();
+        String documento = datos.docTipo() == 99 ? "" : String.format(Locale.ROOT,
+                "\"tipoDocRec\":%d,\"nroDocRec\":%d,", datos.docTipo(), datos.docNumero());
         String json = String.format(Locale.ROOT, """
-                {"ver":1,"fecha":"%s","cuit":%d,"ptoVta":%d,"tipoCmp":%d,"nroCmp":%d,"importe":%s,"moneda":"%s","ctz":%s,"tipoDocRec":%d,"nroDocRec":%d,"tipoCodAut":"E","codAut":%d}
+                {"ver":1,"fecha":"%s","cuit":%d,"ptoVta":%d,"tipoCmp":%d,"nroCmp":%d,"importe":%s,"moneda":"%s","ctz":%s,%s"tipoCodAut":"E","codAut":%d}
                 """.strip(), datos.fecha(), Long.parseLong(serie.getEmisor()), serie.getPuntoVenta(),
                 serie.getTipo(), intento.getNumero(), datos.total().toPlainString(), datos.moneda(),
-                datos.cotizacion().stripTrailingZeros().toPlainString(), datos.docTipo(), datos.docNumero(),
+                datos.cotizacion().stripTrailingZeros().toPlainString(), documento,
                 Long.parseLong(intento.getCae()));
         String base64 = Base64.getEncoder().encodeToString(json.getBytes(StandardCharsets.UTF_8));
         return "https://www.arca.gob.ar/fe/qr/?p=" + URLEncoder.encode(base64, StandardCharsets.UTF_8);

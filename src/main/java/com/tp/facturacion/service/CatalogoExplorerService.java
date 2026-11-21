@@ -64,7 +64,7 @@ public class CatalogoExplorerService {
                     """;
         }
         return buscar(busqueda, paginacion, ListaPrecioArticuloExplorerDto.class,
-                "lpa.id, a.id, a.codigo, a.denominacion, lp.codigo, lp.denominacion, lpa.precioVenta",
+                "lpa.id, a.id, a.codigo, a.denominacion, lp.codigo, lp.denominacion, lpa.precioVenta, a.ivaPorcentaje",
                 "ListaPrecioArticulo lpa JOIN lpa.articulo a JOIN lpa.listaPrecio lp", "lpa.id", vigencia,
                 "LOWER(a.codigo) LIKE :busqueda ESCAPE '!' OR LOWER(a.denominacion) LIKE :busqueda ESCAPE '!' "
                         + "OR LOWER(lp.codigo) LIKE :busqueda ESCAPE '!' OR LOWER(lp.denominacion) LIKE :busqueda ESCAPE '!'",

@@ -75,12 +75,37 @@ class ReservaArcaTests {
  }
  @Test void recuperarPreparacionInvalidaPropietarioViejo() {
   Reserva viejo=almacen.reservar(1,serie,Set.of(6),true);
-  Reserva nuevo=almacen.recuperarPreparando(1);
+  assertThrows(ReglaNegocioException.class, () -> almacen.recuperarPreparando(1, "20999999999"));
+  Reserva nuevo=almacen.recuperarPreparando(1, serie.emisor());
   assertNotEquals(viejo.propietario(),nuevo.propietario());
   assertTrue(almacen.comenzarEnvio(viejo,1).isEmpty());
   almacen.fallarAntesEnvio(viejo);
   assertEquals(PREPARANDO,almacen.estado(1).estadoFiscal());
   assertTrue(almacen.comenzarEnvio(nuevo,1).isPresent());
+ }
+ @Test void snapBSePersisteYLaRecuperacionExigeMismoDesglose() {
+  Serie serieB = new Serie("HOMOLOGACION", serie.emisor(), 1, 6);
+  jdbc.update("UPDATE factura_venta SET tipo_comprobante='FACTURA_B', cliente_id=NULL, importeTotal=121");
+  jdbc.update("UPDATE condicion_iva SET codigoAfip=5");
+  jdbc.update("UPDATE factura_venta_detalle SET precioUnitario=60.5, importeNeto=100, importeIva=21, importeSubtotal=121, iva_porcentaje=21");
+
+  assertThrows(ReglaNegocioException.class, () -> almacen.reservar(1, serie, Set.of(5), true));
+  Reserva reserva = almacen.reservar(1, serieB, Set.of(5), true);
+  Envio envio = almacen.comenzarEnvio(reserva, 1).orElseThrow();
+  Snapshot s = envio.snapshot();
+  assertEquals(99, s.docTipo());
+  assertEquals(0, s.docNumero());
+  assertEquals(new BigDecimal("100.00"), s.neto());
+  assertEquals(new BigDecimal("21.00"), s.iva());
+
+  Snapshot desgloseDistinto = new Snapshot(1, 99, 0, 5, s.fecha(), s.moneda(), s.cotizacion(),
+          s.total(), new BigDecimal("99.00"), new BigDecimal("22.00"));
+  var vencimiento = s.fecha().plusDays(10);
+  almacen.recuperar(reserva.intento(), new Comprobante(serieB, 1, desgloseDistinto, "12345678901234", vencimiento));
+  assertEquals(INCIERTO, almacen.estado(1).estadoFiscal());
+  almacen.recuperar(reserva.intento(), new Comprobante(serieB, 1, s, "12345678901234", vencimiento));
+  assertEquals(AUTORIZADO, almacen.estado(1).estadoFiscal());
+  assertEquals(6, almacen.estado(1).tipoComprobante());
  }
  @Test void rechazoPermiteCorregirYReutilizarNumeroConHistoria() {
   Reserva r=almacen.reservar(1,serie,Set.of(6),true);
@@ -88,6 +113,8 @@ class ReservaArcaTests {
   almacen.finalizar(r.intento(),new ResultadoEnvio(false,null,null,List.of(new ErrorFiscal(1,"Rechazo confirmado")),List.of()));
   assertTrue(almacen.estado(1).puedeModificar());
   assertThrows(ReglaNegocioException.class,()->facturas.eliminar(1L));
+  var otroEmisor = new Serie("HOMOLOGACION", "20111111112", 1, 11);
+  assertThrows(ReglaNegocioException.class, () -> almacen.reservar(1, otroEmisor, Set.of(6), true));
   Reserva nuevo=almacen.reservar(1,serie,Set.of(6),true);
   assertNotEquals(r.intento(),nuevo.intento());
   assertTrue(almacen.comenzarEnvio(nuevo,1).isPresent());
